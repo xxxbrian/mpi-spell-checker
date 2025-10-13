@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.26)
 
+# Enable compile_commands.json generation
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 # Detect OS
 if (APPLE)
     set(IS_MACOS 1)

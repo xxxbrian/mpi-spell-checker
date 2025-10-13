@@ -13,3 +13,5 @@ test.slurm
 *.out
 *.err
 *.txt
+.cache/
+compile_commands.json
