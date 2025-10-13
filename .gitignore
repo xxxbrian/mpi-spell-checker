@@ -1,0 +1,15 @@
+build
+.vscode
+files/
+.idea
+*.result
+**.words
+**.time
+*.tar.gz
+results/
+cmake-build-debug/
+test_word_list_misspelled.txt
+test.slurm
+*.out
+*.err
+*.txt
