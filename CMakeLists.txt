@@ -22,21 +22,21 @@ if (IS_MACOS)
     set(ENV{CCFLAGS} "-I/opt/homebrew/opt/llvm/include -I/opt/homebrew/include -Xpreprocessor -fopenmp")
 endif()
 
-# Set compiler to mpiCC
-find_program(MPI_CXX_COMPILER mpiCC)
-set(CMAKE_CXX_COMPILER ${MPI_CXX_COMPILER})
-message(STATUS "MPI C++ Compiler: ${MPI_CXX_COMPILER}")
+# # Set compiler to mpiCC
+# find_program(MPI_CXX_COMPILER mpiCC)
+# set(CMAKE_CXX_COMPILER ${MPI_CXX_COMPILER})
+# message(STATUS "MPI C++ Compiler: ${MPI_CXX_COMPILER}")
 
-find_program(MPI_C_COMPILER clang)
-set(CMAKE_C_COMPILER ${MPI_C_COMPILER})
-message(STATUS "MPI C Compiler: ${MPI_C_COMPILER}")
+# find_program(MPI_C_COMPILER clang)
+# set(CMAKE_C_COMPILER ${MPI_C_COMPILER})
+# message(STATUS "MPI C Compiler: ${MPI_C_COMPILER}")
 
 
-# set compiler to CC=/usr/local/opt/llvm/bin/clang
-# exit if mpiCC does not exist
-if (NOT CMAKE_CXX_COMPILER)
-    message(FATAL_ERROR "mpiCC not found. Please install mpicxx to compile this project.")
-endif ()
+# # set compiler to CC=/usr/local/opt/llvm/bin/clang
+# # exit if mpiCC does not exist
+# if (NOT CMAKE_CXX_COMPILER)
+#     message(FATAL_ERROR "mpiCC not found. Please install mpicxx to compile this project.")
+# endif ()
 
 project(spellcheck_project)
 
@@ -72,16 +72,16 @@ else()
     message(FATAL_ERROR "OpenMP not found. Please install OpenMP or ensure your compiler supports it.")
 endif()
 
-## Find MPI
-#find_package(MPI REQUIRED)
-#if (MPI_CXX_FOUND)
-#    target_include_directories(spellcheck PUBLIC ${MPI_CXX_INCLUDE_PATH})
-#    target_link_libraries(spellcheck PUBLIC MPI::MPI_CXX)
-#    target_include_directories(test PUBLIC ${MPI_CXX_INCLUDE_PATH})
-#    target_link_libraries(test PUBLIC MPI::MPI_CXX)
-#else()
-#    message(FATAL_ERROR "MPI not found. Please install MPI.")
-#endif()
+# Find MPI
+find_package(MPI REQUIRED)
+if (MPI_CXX_FOUND)
+    target_include_directories(spellcheck PUBLIC ${MPI_CXX_INCLUDE_PATH})
+    target_link_libraries(spellcheck PUBLIC MPI::MPI_CXX)
+    target_include_directories(test PUBLIC ${MPI_CXX_INCLUDE_PATH})
+    target_link_libraries(test PUBLIC MPI::MPI_CXX)
+else()
+    message(FATAL_ERROR "MPI not found. Please install MPI.")
+endif()
 
 # Link stdc++ if necessary
 target_link_libraries(spellcheck PUBLIC stdc++)
