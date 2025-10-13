@@ -111,51 +111,87 @@ Misspelled RunMpi(const char* dict_text, size_t dict_size,
     }
   }
 
-  // Exchange with other ranks (send candidates, receive hits)
+  // Exchange with other ranks using MPI_Sendrecv to avoid deadlock
   for (int target_rank = 0; target_rank < world_size; ++target_rank) {
     if (target_rank == rank) continue;
 
-    // Send count
     int send_count = send_candidates[target_rank].size();
-    MPI_Send(&send_count, 1, MPI_INT, target_rank, 0, MPI_COMM_WORLD);
-
-    // Receive count
     int recv_count = 0;
-    MPI_Recv(&recv_count, 1, MPI_INT, target_rank, 0, MPI_COMM_WORLD,
-             MPI_STATUS_IGNORE);
 
+    // Step 1: Exchange counts using Sendrecv
+    MPI_Sendrecv(&send_count, 1, MPI_INT, target_rank, 0,
+                 &recv_count, 1, MPI_INT, target_rank, 0,
+                 MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+    // Prepare send buffer
+    std::string send_buffer;
     if (send_count > 0) {
-      // Send candidates and word indices
-      std::string send_buffer;
       for (size_t i = 0; i < send_candidates[target_rank].size(); ++i) {
         send_buffer += send_candidates[target_rank][i] + "\n";
       }
-      MPI_Send(send_buffer.c_str(), send_buffer.size(), MPI_CHAR, target_rank,
-               1, MPI_COMM_WORLD);
-      MPI_Send(send_word_indices[target_rank].data(), send_count, MPI_INT,
-               target_rank, 2, MPI_COMM_WORLD);
     }
 
+    // Step 2: Exchange candidate strings and word indices
+    // First exchange buffer sizes
+    int send_buf_size = send_buffer.size();
+    int recv_buf_size = 0;
+    MPI_Sendrecv(&send_buf_size, 1, MPI_INT, target_rank, 1,
+                 &recv_buf_size, 1, MPI_INT, target_rank, 1,
+                 MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+    // Allocate receive buffers
+    char* recv_buffer = nullptr;
+    if (recv_buf_size > 0) {
+      recv_buffer = new char[recv_buf_size + 1];
+    }
+
+    // Exchange candidate strings
+    if (send_buf_size > 0 || recv_buf_size > 0) {
+      const char* send_ptr = send_buf_size > 0 ? send_buffer.c_str() : nullptr;
+      char* recv_ptr = recv_buf_size > 0 ? recv_buffer : nullptr;
+      
+      int actual_send = send_buf_size > 0 ? send_buf_size : 0;
+      int actual_recv = recv_buf_size > 0 ? recv_buf_size : 0;
+      
+      if (actual_send > 0 && actual_recv > 0) {
+        MPI_Sendrecv(send_ptr, actual_send, MPI_CHAR, target_rank, 2,
+                     recv_ptr, actual_recv, MPI_CHAR, target_rank, 2,
+                     MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      } else if (actual_send > 0) {
+        MPI_Send(send_ptr, actual_send, MPI_CHAR, target_rank, 2, MPI_COMM_WORLD);
+      } else if (actual_recv > 0) {
+        MPI_Recv(recv_ptr, actual_recv, MPI_CHAR, target_rank, 2, 
+                 MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      }
+    }
+
+    // Exchange word indices
+    std::vector<int> recv_word_indices(recv_count);
+    if (send_count > 0 || recv_count > 0) {
+      const int* send_idx_ptr = send_count > 0 ? send_word_indices[target_rank].data() : nullptr;
+      int* recv_idx_ptr = recv_count > 0 ? recv_word_indices.data() : nullptr;
+      
+      if (send_count > 0 && recv_count > 0) {
+        MPI_Sendrecv(send_idx_ptr, send_count, MPI_INT, target_rank, 3,
+                     recv_idx_ptr, recv_count, MPI_INT, target_rank, 3,
+                     MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      } else if (send_count > 0) {
+        MPI_Send(send_idx_ptr, send_count, MPI_INT, target_rank, 3, MPI_COMM_WORLD);
+      } else if (recv_count > 0) {
+        MPI_Recv(recv_idx_ptr, recv_count, MPI_INT, target_rank, 3,
+                 MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      }
+    }
+
+    // Step 3: Verify received candidates and prepare hit response
+    std::vector<int> hit_indices;
     if (recv_count > 0) {
-      // Receive candidates to verify
-      int buffer_size = 0;
-      MPI_Status probe_status;
-      MPI_Probe(target_rank, 1, MPI_COMM_WORLD, &probe_status);
-      MPI_Get_count(&probe_status, MPI_CHAR, &buffer_size);
-
-      char* recv_buffer = new char[buffer_size + 1];
-      MPI_Recv(recv_buffer, buffer_size, MPI_CHAR, target_rank, 1,
-               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-      recv_buffer[buffer_size] = '\0';
-
-      std::vector<int> recv_word_indices(recv_count);
-      MPI_Recv(recv_word_indices.data(), recv_count, MPI_INT, target_rank, 2,
-               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
+      recv_buffer[recv_buf_size] = '\0';
+      
       // Parse received candidates
       std::vector<std::string> recv_candidates;
       std::string line;
-      for (int i = 0; i < buffer_size; ++i) {
+      for (int i = 0; i < recv_buf_size; ++i) {
         if (recv_buffer[i] == '\n') {
           if (!line.empty()) {
             recv_candidates.push_back(line);
@@ -166,42 +202,46 @@ Misspelled RunMpi(const char* dict_text, size_t dict_size,
         }
       }
 
-      // Verify against local shard and send back hits
-      std::vector<int> hit_indices;
+      // Verify against local dictionary
       for (size_t i = 0; i < recv_candidates.size(); ++i) {
         if (local_dict.Contains(recv_candidates[i])) {
           hit_indices.push_back(i);
         }
       }
 
-      // Send back hits
-      int hit_count = hit_indices.size();
-      MPI_Send(&hit_count, 1, MPI_INT, target_rank, 3, MPI_COMM_WORLD);
-      if (hit_count > 0) {
-        MPI_Send(hit_indices.data(), hit_count, MPI_INT, target_rank, 4,
-                 MPI_COMM_WORLD);
-      }
-
       delete[] recv_buffer;
     }
 
-    // Receive hits for our sent candidates
-    if (send_count > 0) {
-      int hit_count = 0;
-      MPI_Recv(&hit_count, 1, MPI_INT, target_rank, 3, MPI_COMM_WORLD,
-               MPI_STATUS_IGNORE);
-      if (hit_count > 0) {
-        std::vector<int> hit_indices(hit_count);
-        MPI_Recv(hit_indices.data(), hit_count, MPI_INT, target_rank, 4,
+    // Step 4: Exchange hit results
+    int my_hit_count = hit_indices.size();
+    int peer_hit_count = 0;
+    MPI_Sendrecv(&my_hit_count, 1, MPI_INT, target_rank, 4,
+                 &peer_hit_count, 1, MPI_INT, target_rank, 4,
                  MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-        // Add verified candidates
-        for (int idx : hit_indices) {
-          int word_idx = send_word_indices[target_rank][idx];
-          const std::string& cand = send_candidates[target_rank][idx];
-          verified_candidates[word_idx].insert(cand);
-        }
+    // Exchange hit indices
+    std::vector<int> peer_hit_indices(peer_hit_count);
+    if (my_hit_count > 0 || peer_hit_count > 0) {
+      const int* my_hit_ptr = my_hit_count > 0 ? hit_indices.data() : nullptr;
+      int* peer_hit_ptr = peer_hit_count > 0 ? peer_hit_indices.data() : nullptr;
+      
+      if (my_hit_count > 0 && peer_hit_count > 0) {
+        MPI_Sendrecv(my_hit_ptr, my_hit_count, MPI_INT, target_rank, 5,
+                     peer_hit_ptr, peer_hit_count, MPI_INT, target_rank, 5,
+                     MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      } else if (my_hit_count > 0) {
+        MPI_Send(my_hit_ptr, my_hit_count, MPI_INT, target_rank, 5, MPI_COMM_WORLD);
+      } else if (peer_hit_count > 0) {
+        MPI_Recv(peer_hit_ptr, peer_hit_count, MPI_INT, target_rank, 5,
+                 MPI_COMM_WORLD, MPI_STATUS_IGNORE);
       }
+    }
+
+    // Step 5: Add verified candidates from peer
+    for (int idx : peer_hit_indices) {
+      int word_idx = send_word_indices[target_rank][idx];
+      const std::string& cand = send_candidates[target_rank][idx];
+      verified_candidates[word_idx].insert(cand);
     }
   }
 
