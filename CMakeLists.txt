@@ -20,13 +20,13 @@ if (IS_MACOS)
 endif()
 
 # Set compiler to mpiCC
-#find_program(MPI_CXX_COMPILER mpiCC)
-#set(CMAKE_CXX_COMPILER ${MPI_CXX_COMPILER})
-#message(STATUS "MPI C++ Compiler: ${MPI_CXX_COMPILER}")
+find_program(MPI_CXX_COMPILER mpiCC)
+set(CMAKE_CXX_COMPILER ${MPI_CXX_COMPILER})
+message(STATUS "MPI C++ Compiler: ${MPI_CXX_COMPILER}")
 
-#find_program(MPI_C_COMPILER clang)
-#set(CMAKE_C_COMPILER ${MPI_C_COMPILER})
-#message(STATUS "MPI C Compiler: ${MPI_C_COMPILER}")
+find_program(MPI_C_COMPILER clang)
+set(CMAKE_C_COMPILER ${MPI_C_COMPILER})
+message(STATUS "MPI C Compiler: ${MPI_C_COMPILER}")
 
 
 # set compiler to CC=/usr/local/opt/llvm/bin/clang
