@@ -12,9 +12,8 @@
 class Dictionary {
  public:
   size_t size;
-  size_t chars_size;
 
-  Dictionary(const char* text, size_t text_size) : size(0), chars_size(0) {
+  Dictionary(const char* text, size_t text_size) : size(0) {
     Build(text, text_size);
   }
 
@@ -24,8 +23,6 @@ class Dictionary {
 
  private:
   std::unordered_set<std::string> orig;
-  std::unordered_set<std::string> cap;
-  std::unordered_set<char> chars;
   std::unordered_map<size_t, std::vector<std::string>> len_to_words;
   BKTree bk_tree;
 

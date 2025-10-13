@@ -1,5 +1,6 @@
 #include "dictionary.h"
 #include <cctype>
+#include <stdexcept>
 #include <string>
 #include <unordered_set>
 
@@ -11,7 +12,6 @@ void Dictionary::Build(const char* text, size_t text_size) {
     string word;
     while (i < text_size && text[i] != '\n') {
       word.push_back(text[i]);
-      chars.insert(text[i]);
       ++i;
     }
     if (word.empty()) {
@@ -19,21 +19,46 @@ void Dictionary::Build(const char* text, size_t text_size) {
       continue;
     }
     orig.insert(word);
-    size += 1;
     // prepare for bk tree building
     len_to_words[word.size()].push_back(word);
-    // prepare for check whether the capitalization is in the dictionary
-    string word_cap = word;
-    for (char& j : word_cap) {
-      j = toupper(j);
+
+    if (word[0] >= 'a' && word[0] <= 'z') {
+      // e.ii
+      string upper_word = word;
+      upper_word[0] = toupper(upper_word[0]);
+      orig.insert(upper_word);
+      len_to_words[upper_word.size()].push_back(upper_word);
     }
-    cap.insert(word_cap);
+
+    // Skip the newline character
+    if (i < text_size && text[i] == '\n') {
+      ++i;
+    }
   }
-  chars_size = chars.size();
+  size = orig.size();
 }
 
 void Dictionary::BuildBKTree(size_t root_len) {
-  std::string root_word = len_to_words[root_len][0];
+  std::string root_word;
+
+  // Check if we have words of the requested length
+  if (len_to_words.find(root_len) != len_to_words.end() &&
+      !len_to_words[root_len].empty()) {
+    root_word = len_to_words[root_len][0];
+  } else {
+    // If no words of root_len exist, use the first available word from any length
+    if (!len_to_words.empty()) {
+      root_word = len_to_words.begin()->second[0];
+    } else {
+      // This shouldn't happen if dictionary is not empty, but handle it gracefully
+      if (!orig.empty()) {
+        root_word = *orig.begin();
+      } else {
+        throw std::runtime_error("Dictionary is empty, cannot build BK tree");
+      }
+    }
+  }
+
   bk_tree = BKTree(root_word);
   for (const auto& word : orig) {
     bk_tree.AddNode(word);
@@ -44,87 +69,12 @@ bool Dictionary::Contains(const std::string& word) {
   if (orig.find(word) != orig.end()) {
     return true;
   }
-  // the word with the first letter converted to lower case is in the dictionary
-  if (isupper(word[0])) {
-    // if the first letter is not lowercase, then convert it to lowercase
-    string lower_word = word;
-    lower_word[0] = tolower(lower_word[0]);
-    if (orig.find(lower_word) != orig.end()) {
-      return true;
-    }
-  }
-  // it is all capital
-  bool is_all_capital = true;
-  for (auto c : word) {
-    if (islower(c)) {
-      is_all_capital = false;
-      break;
-    }
-  }
-  if (is_all_capital) {
-    if (cap.find(word) != cap.end()) {
-      // any capitalization is in the dictionary
-      return true;
-    }
-  }
   return false;
 }
-
-#define DELETED_OR_REPLACED_OR_ADDED 1
 
 void Dictionary::Candidates(const std::string& word,
                             std::vector<std::string>* result) {
   bk_tree.SearchNode(word, 2, result);
-#ifdef DELETED_OR_REPLACED_OR_ADDED
-  // if the replaced or deleted character is not in the dictionary, then remove it
-  std::vector<std::string> tmp_res;
-
-  unordered_set<char> word_chars;
-  for (auto c : word) {
-    word_chars.insert(c);
-  }
-  unordered_set<char>* shorter;
-  unordered_set<char>* longer;
-  for (auto& w : *result) {
-    unordered_set<char> res_word_chars;
-    for (auto c : w) {
-      res_word_chars.insert(c);
-    }
-    if (word.size() > w.size()) {
-      shorter = &res_word_chars;
-      longer = &word_chars;
-    } else {
-      shorter = &word_chars;
-      longer = &res_word_chars;
-    }
-    // find the different character
-    char diff_char;
-    bool has_diff_char = false;
-    for (auto c : *longer) {
-      if (shorter->find(c) == shorter->end()) {
-        diff_char = c;
-        has_diff_char = true;
-        break;
-      }
-    }
-    // dictionary does not contain the diff char; the word is not candidate
-    if (has_diff_char) {
-      if (chars.find(diff_char) != chars.end()) {
-        tmp_res.push_back(w);
-      }
-    } else {
-      tmp_res.push_back(w);
-    }
-  }
-  if (tmp_res.size() == result->size()) {
-    return;
-  }
-  // clear the result and copy the tmp_res to the result
-  result->clear();
-  for (auto& w : tmp_res) {
-    result->push_back(w);
-  }
-#endif
 }
 
 WordList BuildWordList(const char* text, size_t text_size) {

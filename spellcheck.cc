@@ -34,7 +34,6 @@ int main(int argc, char** argv) {
   Dictionary dict = Dictionary(dict_text, dict_size);
 
   cout << "\tDictionary size: " << dict.size << endl;
-  cout << "\tDict Chars size " << dict.chars_size << endl;
   cout << "\tWord list size: " << word_list.words.size() << endl;
   cout << "\tRoot len: " << word_list.root_len << endl;
 
@@ -63,6 +62,7 @@ int main(int argc, char** argv) {
   auto milliseconds = duration % 1000;
   cout << "[*] Output: " << out_filename << endl;
   cout << "[*] Wall time: " << minutes << " mins " << seconds << " secs "
-       << milliseconds << " ms" << "; " << duration << endl;
+       << milliseconds << " ms"
+       << "; " << duration << endl;
   return 0;
 }

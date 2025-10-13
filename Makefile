@@ -1,8 +1,10 @@
-# Use CXX for C++ compilation (clang++ or g++)
-CC = $(CXX)
-CXX ?= clang++
+CC = mpiCC
 
-# Note: MPI is not currently used in this project
+# check if mpiCC is available
+MPI_CC_PATH := $(shell command -v mpiCC 2>/dev/null)
+ifndef MPI_CC_PATH
+	$(error mpiCC not found. Please install MPI to run this command.)
+endif
 
 # Check if the machine is macOS
 UNAME_S := $(shell uname -s)
@@ -14,13 +16,13 @@ ifeq ($(UNAME_S),Darwin)
     export CCFLAGS := -I/opt/homebrew/opt/llvm/include -I/opt/homebrew/include -Xpreprocessor -fopenmp
 else
     IS_MACOS := 0
-    LDFLAGS = -fopenmp
+    LDFLAGS = -lmpi -fopenmp
 endif
 
 
 # Set DEBUG to 1 for debug build, 0 for release build
 DEBUG ?= 0
-CCFLAGS += -std=c++17 -Iinclude
+CCFLAGS += -std=c++17 -Iinclude 
 GTEST_FLAGS = -Igtest/include -Igtest
 GMOCK_FLAGS = -Igmock/include -Igmock
 
@@ -59,7 +61,7 @@ $(GTEST_OBJS): $(GTEST_SRCS)
 	$(CC) $(CCFLAGS) $(GTEST_FLAGS) -c $< -o $(GTEST_OBJS)
 
 # GMock object files
-$(GMOCK_OBJS): $(GMOCK_SRCS)
+$(GMOCK_OBJS): $(GMOCK_SRCS) 
 	@mkdir -p $(BUILD_GMOCK_DIR)
 	$(CC) $(CCFLAGS) $(GTEST_FLAGS) $(GMOCK_FLAGS) -c $< -o $(GMOCK_OBJS)
 
@@ -71,6 +73,7 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cc
 test: $(TEST_SRC_FILE) $(GTEST_OBJS) $(GMOCK_OBJS) $(OBJ_FILES)
 	@mkdir -p $(BUILD_DIR)
 	$(CXX) $(CCFLAGS) $(GTEST_FLAGS) $(GMOCK_FLAGS) $^ $(LDFLAGS) -o $(BUILD_DIR)/$@
+	build/test
 
 spellcheck: $(OBJ_FILES) $(MAIN_SRC_FILE)
 	@mkdir -p $(BUILD_DIR)
@@ -81,7 +84,7 @@ format:
 ifdef CLANG_FORMAT_PATH
 	$(CLANG_FORMAT_PATH) -i $(SRC_FILES) $(MAIN_SRC_FILE) $(TEST_SRC_FILE)
 else
-	@echo "clang-format not found. Please install clang-format to run this command."
+# 	@echo "clang-format not found. Please install clang-format to run this command."
 endif
 
 VER ?=

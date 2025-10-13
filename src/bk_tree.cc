@@ -9,21 +9,10 @@ static int Abs(int x) {
   return x < 0 ? -x : x;
 }
 
-BKTree::~BKTree() {
-  //  std::stack<BKNode*> nodes;
-  //  nodes.push(&root);
-  //
-  //  while (!nodes.empty()) {
-  //    BKNode* current = nodes.top();
-  //    nodes.pop();
-  //    for (auto& child : current->children) {
-  //      nodes.push(child.second);
-  //    }
-  //  }
-}
+BKTree::~BKTree() {}
 
 int BKTree::Distance(const std::string& s1, const std::string& s2) {
-  return static_cast<int>(EditDistance(s1, s2, false));
+  return static_cast<int>(EditDistance(s1, s2));
 }
 
 void BKTree::AddNode(const std::string& word) {
@@ -64,7 +53,7 @@ void BKTree::SearchNode(const std::string& word, const int tol,
   }
 
   for (const auto& res_word : tmp_res) {
-    size_t dist = EditDistance(word, res_word, true);
+    size_t dist = EditDistance(word, res_word);
     if (dist == 1) {
       result->push_back(res_word);
     }

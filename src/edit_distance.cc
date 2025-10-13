@@ -5,8 +5,7 @@
 
 thread_local std::vector<std::vector<size_t>> dp;
 
-size_t EditDistance(const std::string& s1, const std::string& s2,
-                    bool consider_swap) {
+size_t EditDistance(const std::string& s1, const std::string& s2) {
   const size_t m = s1.size();
   const size_t n = s2.size();
 
@@ -34,13 +33,6 @@ size_t EditDistance(const std::string& s1, const std::string& s2,
       } else {
         dp[i][j] = std::min(
             {dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + 1});
-        if (!consider_swap) {
-          continue;
-        }
-        if (i > 1 && j > 1 && s1[i - 1] == s2[j - 2] &&
-            s1[i - 2] == s2[j - 1]) {
-          dp[i][j] = std::min(dp[i][j], dp[i - 2][j - 2] + 1);
-        }
       }
     }
   }

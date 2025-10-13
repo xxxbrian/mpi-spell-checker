@@ -10,28 +10,25 @@ using namespace std;
 
 Misspelled GetMisspelled(const WordList& word_list, Dictionary& dict) {
   Misspelled misspelled;
-  size_t num_threads = omp_get_max_threads();
-  // set number of threads to 1
-  //  omp_set_num_threads(num_threads);
+  int num_threads = omp_get_max_threads();
+  omp_set_num_threads(num_threads);
   cout << "[*] Number of threads: " << num_threads << endl;
 
 #pragma omp parallel
   {
-    // Each thread gets its own local copy of dict
-    Dictionary dict_local = dict;
     Misspelled misspelled_local;
 
 #pragma omp for schedule(dynamic)
     for (size_t i = 0; i < word_list.words.size(); ++i) {
       const auto& word = word_list.words[i];
 
-      if (dict_local.Contains(word)) {
+      if (dict.Contains(word)) {
         continue;
       }
 
       Line line;
       line.word = word;
-      dict_local.Candidates(word, &line.candidates);
+      dict.Candidates(word, &line.candidates);
 
       misspelled_local.push_back(line);
     }
