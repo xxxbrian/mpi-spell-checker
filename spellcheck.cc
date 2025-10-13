@@ -1,10 +1,10 @@
 #include <chrono>
 #include <iostream>
-#include <string>
-#include <unordered_set>
+#include <mpi.h>
 #include "include/candidates.h"
-#include "include/dictionary.h"
 #include "include/load_files.h"
+#include "include/sched_single.h"
+#include "include/sched_mpi.h"
 
 using namespace std;
 using namespace std::chrono;
@@ -27,28 +27,30 @@ int main(int argc, char** argv) {
   size_t dict_size, word_list_size;
   char* dict_text = LoadFile(filename_dict, &dict_size);
   char* word_list_text = LoadFile(filename_word_list, &word_list_size);
-  WordList word_list = BuildWordList(word_list_text, word_list_size);
 
-  // build BK tree
-  cout << "[*] Building dictionary with bk trees" << endl;
-  Dictionary dict = Dictionary(dict_text, dict_size);
+  int provided = 0, initialized = 0;
+  MPI_Initialized(&initialized);
+  if (!initialized) {
+    MPI_Init_thread(nullptr, nullptr, MPI_THREAD_FUNNELED, &provided);
+  }
+  int world_size = 1, world_rank = 0;
+  MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+  MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
 
-  cout << "\tDictionary size: " << dict.size << endl;
-  cout << "\tWord list size: " << word_list.words.size() << endl;
-  cout << "\tRoot len: " << word_list.root_len << endl;
-
-  dict.BuildBKTree(word_list.root_len);
-
-  // Get misspelled words
-  cout << "[*] Getting misspelled words" << endl;
-
-  Misspelled misspelled = GetMisspelled(word_list, dict);
-  // Format and save misspelled words
+  // Chose scheduling method
+  Misspelled misspelled;
+  if (world_size > 1) {
+    misspelled = RunMpi(dict_text, dict_size, word_list_text, word_list_size);
+  } else {
+    misspelled = RunSingle(dict_text, dict_size, word_list_text, word_list_size);
+  }
 
   const char* out_filename = "results/word_list_misspelled.txt";
-  FILE* outfile = fopen(out_filename, "w");
-  SaveMisspelled(misspelled, outfile);
-  fclose(outfile);
+  if (world_rank == 0) {
+    FILE* outfile = fopen(out_filename, "w");
+    SaveMisspelled(misspelled, outfile);
+    fclose(outfile);
+  }
 
   free(dict_text);
   free(word_list_text);
@@ -64,5 +66,11 @@ int main(int argc, char** argv) {
   cout << "[*] Wall time: " << minutes << " mins " << seconds << " secs "
        << milliseconds << " ms"
        << "; " << duration << endl;
+
+  MPI_Barrier(MPI_COMM_WORLD);
+  int finalized = 0;
+  MPI_Finalized(&finalized);
+  if (!finalized) MPI_Finalize();
+
   return 0;
 }
