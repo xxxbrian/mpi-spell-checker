@@ -1,4 +1,5 @@
 #include <chrono>
+#include <cstring>
 #include <iostream>
 #include <mpi.h>
 #include "include/candidates.h"
@@ -10,8 +11,18 @@ using namespace std;
 using namespace std::chrono;
 
 int main(int argc, char** argv) {
-  if (argc != 3) {
-    cout << "Usage: " << argv[0] << " <dictionary> <word_list>" << endl;
+  bool use_bloom = false;
+  if (argc == 4) {
+    if (strcmp(argv[3], "--use-bloom") == 0) {
+      use_bloom = true;
+    } else {
+      cout << "Usage: " << argv[0]
+           << " <dictionary> <word_list> [--use-bloom]" << endl;
+      return 1;
+    }
+  } else if (argc != 3) {
+    cout << "Usage: " << argv[0]
+         << " <dictionary> <word_list> [--use-bloom]" << endl;
     return 1;
   }
 
@@ -23,6 +34,7 @@ int main(int argc, char** argv) {
 
   cout << "[*] Using dictionary: " << filename_dict << endl;
   cout << "[*] Using word list: " << filename_word_list << endl;
+  cout << "[*] Bloom filter: " << (use_bloom ? "enabled" : "disabled") << endl;
 
   size_t dict_size, word_list_size;
   char* dict_text = LoadFile(filename_dict, &dict_size);
@@ -40,7 +52,8 @@ int main(int argc, char** argv) {
   // Chose scheduling method
   Misspelled misspelled;
   if (world_size > 1) {
-    misspelled = RunMpi(dict_text, dict_size, word_list_text, word_list_size);
+    misspelled =
+        RunMpi(dict_text, dict_size, word_list_text, word_list_size, use_bloom);
   } else {
     misspelled = RunSingle(dict_text, dict_size, word_list_text, word_list_size);
   }

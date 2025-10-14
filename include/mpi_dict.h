@@ -18,6 +18,7 @@ class DistributedDict {
 
   // Get the number of words in this shard
   size_t Size() const { return words_.size(); }
+  const std::unordered_set<std::string>& Words() const { return words_; }
 
  private:
   std::unordered_set<std::string> words_;

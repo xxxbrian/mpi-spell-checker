@@ -1,11 +1,13 @@
 #include "sched_mpi.h"
 #include <mpi.h>
 #include <algorithm>
+#include <cctype>
 #include <cstring>
 #include <iostream>
 #include <unordered_set>
 #include <vector>
 #include "mpi_candidates.h"
+#include "mpi_bloom.h"
 #include "mpi_dict.h"
 #include "mpi_utils.h"
 
@@ -16,6 +18,15 @@ constexpr int TAG_REQ_PAYLOAD = 102;
 constexpr int TAG_RESP_HEADER = 200;
 constexpr int TAG_RESP_INDICES = 201;
 constexpr int TAG_TERMINATE = 300;
+
+std::string NormalizeFirstLower(const std::string& word) {
+  std::string normalized = word;
+  if (!normalized.empty()) {
+    normalized[0] =
+        static_cast<char>(std::tolower(static_cast<unsigned char>(normalized[0])));
+  }
+  return normalized;
+}
 
 void DrainIncomingRequests(const DistributedDict& local_dict) {
   int flag = 0;
@@ -155,7 +166,8 @@ void WaitForTerminations(const DistributedDict& local_dict, int rank,
 }  // namespace
 
 Misspelled RunMpi(const char* dict_text, size_t dict_size,
-                  const char* word_list_text, size_t word_list_size) {
+                  const char* word_list_text, size_t word_list_size,
+                  bool use_bloom) {
   int rank = 0, world_size = 1;
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   MPI_Comm_size(MPI_COMM_WORLD, &world_size);
@@ -175,6 +187,41 @@ Misspelled RunMpi(const char* dict_text, size_t dict_size,
   if (rank == 0) {
     std::cout << "[MPI] Local dict shard size (rank 0): " << local_dict.Size()
               << std::endl;
+  }
+
+  BloomFilter local_bloom;
+  std::vector<uint8_t> all_bloom_bytes;
+  size_t bloom_bit_count = 0;
+  size_t bloom_byte_count = 0;
+  const size_t bloom_hash_count = 3;
+
+  if (use_bloom) {
+    unsigned long long local_word_count =
+        static_cast<unsigned long long>(local_dict.Size());
+    unsigned long long global_word_count = 0;
+    MPI_Allreduce(&local_word_count, &global_word_count, 1,
+                  MPI_UNSIGNED_LONG_LONG, MPI_SUM, MPI_COMM_WORLD);
+
+    size_t total_words = static_cast<size_t>(global_word_count);
+    bloom_bit_count = std::max<size_t>(total_words * 12, 1024ULL);
+    local_bloom = BloomFilter(bloom_bit_count, bloom_hash_count);
+    bloom_bit_count = local_bloom.BitCount();
+    for (const auto& dict_word : local_dict.Words()) {
+      local_bloom.Add(NormalizeFirstLower(dict_word));
+    }
+
+    bloom_byte_count = local_bloom.ByteSize();
+    all_bloom_bytes.resize(static_cast<size_t>(world_size) * bloom_byte_count);
+    const auto& local_bits = local_bloom.Bits();
+    MPI_Allgather(const_cast<uint8_t*>(local_bits.data()),
+                  static_cast<int>(bloom_byte_count), MPI_UNSIGNED_CHAR,
+                  all_bloom_bytes.data(), static_cast<int>(bloom_byte_count),
+                  MPI_UNSIGNED_CHAR, MPI_COMM_WORLD);
+
+    if (rank == 0) {
+      std::cout << "[MPI] Bloom filter enabled with " << bloom_bit_count
+                << " bits and " << bloom_hash_count << " hashes" << std::endl;
+    }
   }
 
   // Step 2: Build word list (all ranks have the same word list)
@@ -227,6 +274,16 @@ Misspelled RunMpi(const char* dict_text, size_t dict_size,
           verified.insert(cand);
         }
       } else {
+        if (use_bloom) {
+          const uint8_t* peer_bits =
+              all_bloom_bytes.data() +
+              static_cast<size_t>(target_rank) * bloom_byte_count;
+          if (!BloomFilter::MaybeContainsRaw(peer_bits, bloom_bit_count,
+                                             bloom_hash_count,
+                                             NormalizeFirstLower(cand))) {
+            continue;
+          }
+        }
         remote_candidates[target_rank].push_back(cand);
       }
     }
