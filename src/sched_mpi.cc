@@ -3,12 +3,156 @@
 #include <algorithm>
 #include <cstring>
 #include <iostream>
-#include <map>
 #include <unordered_set>
 #include <vector>
 #include "mpi_candidates.h"
 #include "mpi_dict.h"
 #include "mpi_utils.h"
+
+namespace {
+constexpr int TAG_REQ_HEADER = 100;
+constexpr int TAG_REQ_LENGTHS = 101;
+constexpr int TAG_REQ_PAYLOAD = 102;
+constexpr int TAG_RESP_HEADER = 200;
+constexpr int TAG_RESP_INDICES = 201;
+constexpr int TAG_TERMINATE = 300;
+
+void DrainIncomingRequests(const DistributedDict& local_dict) {
+  int flag = 0;
+  MPI_Status status;
+  MPI_Iprobe(MPI_ANY_SOURCE, TAG_REQ_HEADER, MPI_COMM_WORLD, &flag, &status);
+  while (flag) {
+    int src = status.MPI_SOURCE;
+    int header[2] = {0, 0};
+    MPI_Recv(header, 2, MPI_INT, src, TAG_REQ_HEADER, MPI_COMM_WORLD,
+             MPI_STATUS_IGNORE);
+    int word_idx = header[0];
+    int count = header[1];
+
+    std::vector<int> hit_indices;
+    std::vector<int> lengths;
+    std::string buffer;
+
+    if (count > 0) {
+      lengths.resize(count);
+      MPI_Recv(lengths.data(), count, MPI_INT, src, TAG_REQ_LENGTHS,
+               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+      size_t total_bytes = 0;
+      for (int len : lengths) {
+        total_bytes += static_cast<size_t>(len);
+      }
+
+      buffer.resize(total_bytes);
+      if (total_bytes > 0) {
+        MPI_Recv(buffer.data(), static_cast<int>(total_bytes), MPI_CHAR, src,
+                 TAG_REQ_PAYLOAD, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      }
+
+      size_t offset = 0;
+      for (int i = 0; i < count; ++i) {
+        std::string candidate(buffer.data() + offset,
+                              static_cast<size_t>(lengths[i]));
+        if (local_dict.Contains(candidate)) {
+          hit_indices.push_back(i);
+        }
+        offset += static_cast<size_t>(lengths[i]);
+      }
+    }
+
+    int response_header[2] = {word_idx, static_cast<int>(hit_indices.size())};
+    MPI_Send(response_header, 2, MPI_INT, src, TAG_RESP_HEADER,
+             MPI_COMM_WORLD);
+    if (!hit_indices.empty()) {
+      MPI_Send(hit_indices.data(), static_cast<int>(hit_indices.size()),
+               MPI_INT, src, TAG_RESP_INDICES, MPI_COMM_WORLD);
+    }
+
+    MPI_Iprobe(MPI_ANY_SOURCE, TAG_REQ_HEADER, MPI_COMM_WORLD, &flag, &status);
+  }
+}
+
+void SendCandidateBatch(int target_rank, int word_idx,
+                        const std::vector<std::string>& candidates) {
+  int header[2] = {word_idx, static_cast<int>(candidates.size())};
+  MPI_Send(header, 2, MPI_INT, target_rank, TAG_REQ_HEADER, MPI_COMM_WORLD);
+  if (candidates.empty()) {
+    return;
+  }
+
+  std::vector<int> lengths(candidates.size());
+  size_t total_bytes = 0;
+  for (size_t i = 0; i < candidates.size(); ++i) {
+    lengths[i] = static_cast<int>(candidates[i].size());
+    total_bytes += candidates[i].size();
+  }
+
+  MPI_Send(lengths.data(), static_cast<int>(lengths.size()), MPI_INT,
+           target_rank, TAG_REQ_LENGTHS, MPI_COMM_WORLD);
+
+  std::string buffer;
+  buffer.reserve(total_bytes);
+  for (const auto& cand : candidates) {
+    buffer.append(cand);
+  }
+  if (!buffer.empty()) {
+    MPI_Send(buffer.data(), static_cast<int>(buffer.size()), MPI_CHAR,
+             target_rank, TAG_REQ_PAYLOAD, MPI_COMM_WORLD);
+  }
+}
+
+std::vector<int> WaitForResponse(int target_rank, int expected_word_idx,
+                                 const DistributedDict& local_dict) {
+  MPI_Status status;
+  while (true) {
+    DrainIncomingRequests(local_dict);
+    int flag = 0;
+    MPI_Iprobe(target_rank, TAG_RESP_HEADER, MPI_COMM_WORLD, &flag, &status);
+    if (flag) {
+      int response_header[2] = {0, 0};
+      MPI_Recv(response_header, 2, MPI_INT, target_rank, TAG_RESP_HEADER,
+               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      (void)expected_word_idx;
+      int hit_count = response_header[1];
+      std::vector<int> indices(hit_count);
+      if (hit_count > 0) {
+        MPI_Recv(indices.data(), hit_count, MPI_INT, target_rank,
+                 TAG_RESP_INDICES, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      }
+      return indices;
+    }
+  }
+}
+
+void SendTerminationSignals(int rank, int world_size) {
+  for (int peer = 0; peer < world_size; ++peer) {
+    if (peer == rank) continue;
+    MPI_Send(nullptr, 0, MPI_CHAR, peer, TAG_TERMINATE, MPI_COMM_WORLD);
+  }
+}
+
+void WaitForTerminations(const DistributedDict& local_dict, int rank,
+                         int world_size) {
+  std::vector<bool> done(world_size, false);
+  done[rank] = true;
+  int done_count = 0;
+
+  while (done_count < world_size - 1) {
+    DrainIncomingRequests(local_dict);
+    int flag = 0;
+    MPI_Status status;
+    MPI_Iprobe(MPI_ANY_SOURCE, TAG_TERMINATE, MPI_COMM_WORLD, &flag, &status);
+    if (flag) {
+      MPI_Recv(nullptr, 0, MPI_CHAR, status.MPI_SOURCE, TAG_TERMINATE,
+               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      if (!done[status.MPI_SOURCE]) {
+        done[status.MPI_SOURCE] = true;
+        ++done_count;
+      }
+    }
+  }
+}
+}  // namespace
 
 Misspelled RunMpi(const char* dict_text, size_t dict_size,
                   const char* word_list_text, size_t word_list_size) {
@@ -25,7 +169,8 @@ Misspelled RunMpi(const char* dict_text, size_t dict_size,
   // Since dict_text is already loaded by rank 0, we need to distribute it
   // For simplicity in basic version, all ranks build from provided text
   // (In production, would use MPI-IO from file directly)
-  DistributedDict local_dict = BuildDistributedDict(dict_text, dict_size);
+  DistributedDict local_dict =
+      BuildDistributedDict(dict_text, dict_size, rank, world_size);
 
   if (rank == 0) {
     std::cout << "[MPI] Local dict shard size (rank 0): " << local_dict.Size()
@@ -64,195 +209,47 @@ Misspelled RunMpi(const char* dict_text, size_t dict_size,
   }
 
   // Step 5: Generate candidates for owned words
-  std::map<int, std::vector<std::string>> word_candidates;  // word_idx -> candidates
-  for (int word_idx : owned_word_indices) {
-    const std::string& word = word_list[word_idx];
-    std::vector<std::string> candidates = GenerateEditDistance1Candidates(word);
-    word_candidates[word_idx] = candidates;
-  }
-
-  // Step 6: Verify candidates across all shards
-  // For basic version: each rank verifies its owned candidates against all shards
-  // We'll use a simple all-to-all exchange pattern
-
-  // Prepare send buffers: what candidates to send to each rank
-  std::vector<std::vector<std::string>> send_candidates(world_size);
-  std::vector<std::vector<int>> send_word_indices(world_size);
-
-  for (const auto& entry : word_candidates) {
-    int word_idx = entry.first;
-    const std::vector<std::string>& candidates = entry.second;
-
-    // Send all candidates to all ranks for verification (basic version)
-    for (int target_rank = 0; target_rank < world_size; ++target_rank) {
-      for (const std::string& cand : candidates) {
-        send_candidates[target_rank].push_back(cand);
-        send_word_indices[target_rank].push_back(word_idx);
-      }
-    }
-  }
-
-  // Exchange candidates using Alltoallv pattern (simplified with Send/Recv)
-  // Each rank will verify received candidates and send back hits
-
-  // Collect verified candidates for each word
-  std::map<int, std::unordered_set<std::string>> verified_candidates;
-  for (int word_idx : owned_word_indices) {
-    verified_candidates[word_idx] = std::unordered_set<std::string>();
-  }
-
-  // Simple verification: each rank checks its own candidates against own shard
-  for (const auto& entry : word_candidates) {
-    int word_idx = entry.first;
-    for (const std::string& cand : entry.second) {
-      if (local_dict.Contains(cand)) {
-        verified_candidates[word_idx].insert(cand);
-      }
-    }
-  }
-
-  // Exchange with other ranks using MPI_Sendrecv to avoid deadlock
-  for (int target_rank = 0; target_rank < world_size; ++target_rank) {
-    if (target_rank == rank) continue;
-
-    int send_count = send_candidates[target_rank].size();
-    int recv_count = 0;
-
-    // Step 1: Exchange counts using Sendrecv
-    MPI_Sendrecv(&send_count, 1, MPI_INT, target_rank, 0,
-                 &recv_count, 1, MPI_INT, target_rank, 0,
-                 MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-    // Prepare send buffer
-    std::string send_buffer;
-    if (send_count > 0) {
-      for (size_t i = 0; i < send_candidates[target_rank].size(); ++i) {
-        send_buffer += send_candidates[target_rank][i] + "\n";
-      }
-    }
-
-    // Step 2: Exchange candidate strings and word indices
-    // First exchange buffer sizes
-    int send_buf_size = send_buffer.size();
-    int recv_buf_size = 0;
-    MPI_Sendrecv(&send_buf_size, 1, MPI_INT, target_rank, 1,
-                 &recv_buf_size, 1, MPI_INT, target_rank, 1,
-                 MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-    // Allocate receive buffers
-    char* recv_buffer = nullptr;
-    if (recv_buf_size > 0) {
-      recv_buffer = new char[recv_buf_size + 1];
-    }
-
-    // Exchange candidate strings
-    if (send_buf_size > 0 || recv_buf_size > 0) {
-      const char* send_ptr = send_buf_size > 0 ? send_buffer.c_str() : nullptr;
-      char* recv_ptr = recv_buf_size > 0 ? recv_buffer : nullptr;
-      
-      int actual_send = send_buf_size > 0 ? send_buf_size : 0;
-      int actual_recv = recv_buf_size > 0 ? recv_buf_size : 0;
-      
-      if (actual_send > 0 && actual_recv > 0) {
-        MPI_Sendrecv(send_ptr, actual_send, MPI_CHAR, target_rank, 2,
-                     recv_ptr, actual_recv, MPI_CHAR, target_rank, 2,
-                     MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-      } else if (actual_send > 0) {
-        MPI_Send(send_ptr, actual_send, MPI_CHAR, target_rank, 2, MPI_COMM_WORLD);
-      } else if (actual_recv > 0) {
-        MPI_Recv(recv_ptr, actual_recv, MPI_CHAR, target_rank, 2, 
-                 MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-      }
-    }
-
-    // Exchange word indices
-    std::vector<int> recv_word_indices(recv_count);
-    if (send_count > 0 || recv_count > 0) {
-      const int* send_idx_ptr = send_count > 0 ? send_word_indices[target_rank].data() : nullptr;
-      int* recv_idx_ptr = recv_count > 0 ? recv_word_indices.data() : nullptr;
-      
-      if (send_count > 0 && recv_count > 0) {
-        MPI_Sendrecv(send_idx_ptr, send_count, MPI_INT, target_rank, 3,
-                     recv_idx_ptr, recv_count, MPI_INT, target_rank, 3,
-                     MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-      } else if (send_count > 0) {
-        MPI_Send(send_idx_ptr, send_count, MPI_INT, target_rank, 3, MPI_COMM_WORLD);
-      } else if (recv_count > 0) {
-        MPI_Recv(recv_idx_ptr, recv_count, MPI_INT, target_rank, 3,
-                 MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-      }
-    }
-
-    // Step 3: Verify received candidates and prepare hit response
-    std::vector<int> hit_indices;
-    if (recv_count > 0) {
-      recv_buffer[recv_buf_size] = '\0';
-      
-      // Parse received candidates
-      std::vector<std::string> recv_candidates;
-      std::string line;
-      for (int i = 0; i < recv_buf_size; ++i) {
-        if (recv_buffer[i] == '\n') {
-          if (!line.empty()) {
-            recv_candidates.push_back(line);
-            line.clear();
-          }
-        } else {
-          line += recv_buffer[i];
-        }
-      }
-
-      // Verify against local dictionary
-      for (size_t i = 0; i < recv_candidates.size(); ++i) {
-        if (local_dict.Contains(recv_candidates[i])) {
-          hit_indices.push_back(i);
-        }
-      }
-
-      delete[] recv_buffer;
-    }
-
-    // Step 4: Exchange hit results
-    int my_hit_count = hit_indices.size();
-    int peer_hit_count = 0;
-    MPI_Sendrecv(&my_hit_count, 1, MPI_INT, target_rank, 4,
-                 &peer_hit_count, 1, MPI_INT, target_rank, 4,
-                 MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-    // Exchange hit indices
-    std::vector<int> peer_hit_indices(peer_hit_count);
-    if (my_hit_count > 0 || peer_hit_count > 0) {
-      const int* my_hit_ptr = my_hit_count > 0 ? hit_indices.data() : nullptr;
-      int* peer_hit_ptr = peer_hit_count > 0 ? peer_hit_indices.data() : nullptr;
-      
-      if (my_hit_count > 0 && peer_hit_count > 0) {
-        MPI_Sendrecv(my_hit_ptr, my_hit_count, MPI_INT, target_rank, 5,
-                     peer_hit_ptr, peer_hit_count, MPI_INT, target_rank, 5,
-                     MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-      } else if (my_hit_count > 0) {
-        MPI_Send(my_hit_ptr, my_hit_count, MPI_INT, target_rank, 5, MPI_COMM_WORLD);
-      } else if (peer_hit_count > 0) {
-        MPI_Recv(peer_hit_ptr, peer_hit_count, MPI_INT, target_rank, 5,
-                 MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-      }
-    }
-
-    // Step 5: Add verified candidates from peer
-    for (int idx : peer_hit_indices) {
-      int word_idx = send_word_indices[target_rank][idx];
-      const std::string& cand = send_candidates[target_rank][idx];
-      verified_candidates[word_idx].insert(cand);
-    }
-  }
-
-  // Step 7: Build local misspelled results
   Misspelled local_misspelled;
   for (int word_idx : owned_word_indices) {
+    DrainIncomingRequests(local_dict);
+
+    const std::string& word = word_list[word_idx];
+    std::vector<std::string> candidates = GenerateEditDistance1Candidates(word);
+
+    std::unordered_set<std::string> verified;
+    std::vector<std::vector<std::string>> remote_candidates(world_size);
+
+    for (const std::string& cand : candidates) {
+      DrainIncomingRequests(local_dict);
+      int target_rank = GetOwnerRank(cand, world_size);
+      if (target_rank == rank) {
+        if (local_dict.Contains(cand)) {
+          verified.insert(cand);
+        }
+      } else {
+        remote_candidates[target_rank].push_back(cand);
+      }
+    }
+
+    for (int target_rank = 0; target_rank < world_size; ++target_rank) {
+      if (target_rank == rank) continue;
+      if (remote_candidates[target_rank].empty()) continue;
+      DrainIncomingRequests(local_dict);
+
+      SendCandidateBatch(target_rank, word_idx, remote_candidates[target_rank]);
+      std::vector<int> hit_indices =
+          WaitForResponse(target_rank, word_idx, local_dict);
+      for (int idx : hit_indices) {
+        if (idx >= 0 &&
+            idx < static_cast<int>(remote_candidates[target_rank].size())) {
+          verified.insert(remote_candidates[target_rank][idx]);
+        }
+      }
+    }
+
     Line line;
     line.word = word_list[word_idx];
-    line.candidates =
-        std::vector<std::string>(verified_candidates[word_idx].begin(),
-                                 verified_candidates[word_idx].end());
+    line.candidates.assign(verified.begin(), verified.end());
 
     // Sort candidates by strcmp
     std::sort(line.candidates.begin(), line.candidates.end(),
@@ -263,7 +260,11 @@ Misspelled RunMpi(const char* dict_text, size_t dict_size,
     local_misspelled.push_back(line);
   }
 
-  // Step 8: Gather all results to rank 0
+  DrainIncomingRequests(local_dict);
+  SendTerminationSignals(rank, world_size);
+  WaitForTerminations(local_dict, rank, world_size);
+
+  // Step 6: Gather all results to rank 0
   Misspelled global_misspelled;
 
   if (rank == 0) {

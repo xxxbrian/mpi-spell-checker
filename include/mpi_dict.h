@@ -24,6 +24,7 @@ class DistributedDict {
 };
 
 // Build a dictionary shard from text chunk
-DistributedDict BuildDistributedDict(const char* text, size_t text_size);
+DistributedDict BuildDistributedDict(const char* text, size_t text_size,
+                                     int rank, int world_size);
 
 #endif  // MPI_DICT_H

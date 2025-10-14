@@ -1,4 +1,5 @@
 #include "mpi_utils.h"
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -85,7 +86,11 @@ std::vector<std::string> BuildMpiWordList(const char* text, size_t text_size) {
 }
 
 int GetOwnerRank(const std::string& word, int world_size) {
+  std::string key = word;
+  if (!key.empty()) {
+    key[0] = static_cast<char>(std::tolower(static_cast<unsigned char>(key[0])));
+  }
   std::hash<std::string> hasher;
-  size_t hash_value = hasher(word);
+  size_t hash_value = hasher(key);
   return hash_value % world_size;
 }

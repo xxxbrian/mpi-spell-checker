@@ -1,5 +1,6 @@
 #include "mpi_dict.h"
 #include <cctype>
+#include "mpi_utils.h"
 
 void DistributedDict::Insert(const std::string& word) {
   if (!word.empty()) {
@@ -25,7 +26,8 @@ bool DistributedDict::Contains(const std::string& word) const {
   return false;
 }
 
-DistributedDict BuildDistributedDict(const char* text, size_t text_size) {
+DistributedDict BuildDistributedDict(const char* text, size_t text_size,
+                                     int rank, int world_size) {
   DistributedDict dict;
   size_t i = 0;
 
@@ -37,14 +39,8 @@ DistributedDict BuildDistributedDict(const char* text, size_t text_size) {
     }
 
     if (!word.empty()) {
-      dict.Insert(word);
-
-      // Also insert the version with first letter uppercase
-      // to handle lowercase dictionary entries matching uppercase queries
-      if (!word.empty() && std::islower(word[0])) {
-        std::string upper_first = word;
-        upper_first[0] = std::toupper(upper_first[0]);
-        dict.Insert(upper_first);
+      if (GetOwnerRank(word, world_size) == rank) {
+        dict.Insert(word);
       }
     }
 
