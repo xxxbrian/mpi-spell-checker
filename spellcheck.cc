@@ -12,18 +12,24 @@ using namespace std::chrono;
 
 int main(int argc, char** argv) {
   bool use_bloom = false;
-  if (argc == 4) {
-    if (strcmp(argv[3], "--use-bloom") == 0) {
+  bool force_mpi = false;
+
+  if (argc < 3) {
+    cout << "Usage: " << argv[0]
+         << " <dictionary> <word_list> [--use-bloom] [--force-mpi]" << endl;
+    return 1;
+  }
+
+  for (int i = 3; i < argc; ++i) {
+    if (strcmp(argv[i], "--use-bloom") == 0) {
       use_bloom = true;
+    } else if (strcmp(argv[i], "--force-mpi") == 0) {
+      force_mpi = true;
     } else {
       cout << "Usage: " << argv[0]
-           << " <dictionary> <word_list> [--use-bloom]" << endl;
+           << " <dictionary> <word_list> [--use-bloom] [--force-mpi]" << endl;
       return 1;
     }
-  } else if (argc != 3) {
-    cout << "Usage: " << argv[0]
-         << " <dictionary> <word_list> [--use-bloom]" << endl;
-    return 1;
   }
 
   auto start = high_resolution_clock::now();  // Start timing
@@ -35,6 +41,7 @@ int main(int argc, char** argv) {
   cout << "[*] Using dictionary: " << filename_dict << endl;
   cout << "[*] Using word list: " << filename_word_list << endl;
   cout << "[*] Bloom filter: " << (use_bloom ? "enabled" : "disabled") << endl;
+  cout << "[*] Force MPI: " << (force_mpi ? "enabled" : "disabled") << endl;
 
   size_t dict_size, word_list_size;
   char* dict_text = LoadFile(filename_dict, &dict_size);
@@ -51,7 +58,7 @@ int main(int argc, char** argv) {
 
   // Chose scheduling method
   Misspelled misspelled;
-  if (world_size > 1) {
+  if (world_size > 1 || force_mpi) {
     misspelled =
         RunMpi(dict_text, dict_size, word_list_text, word_list_size, use_bloom);
   } else {
