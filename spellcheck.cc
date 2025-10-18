@@ -12,6 +12,28 @@
 using namespace std;
 using namespace std::chrono;
 
+namespace {
+void ReportTimingMetric(const char* label, double local_time, int rank,
+                        int world_size) {
+  double sum = 0.0;
+  double min = 0.0;
+  double max = 0.0;
+
+  MPI_Reduce(&local_time, rank == 0 ? &sum : nullptr, 1, MPI_DOUBLE, MPI_SUM, 0,
+             MPI_COMM_WORLD);
+  MPI_Reduce(&local_time, rank == 0 ? &min : nullptr, 1, MPI_DOUBLE, MPI_MIN, 0,
+             MPI_COMM_WORLD);
+  MPI_Reduce(&local_time, rank == 0 ? &max : nullptr, 1, MPI_DOUBLE, MPI_MAX, 0,
+             MPI_COMM_WORLD);
+
+  if (rank == 0) {
+    double avg = sum / static_cast<double>(world_size);
+    std::cout << "[MPI][timing] " << label << " avg=" << avg << "s min=" << min
+              << "s max=" << max << "s" << std::endl;
+  }
+}
+}  // namespace
+
 int main(int argc, char** argv) {
   bool use_bloom = false;
   bool force_mpi = false;
@@ -62,10 +84,17 @@ int main(int argc, char** argv) {
 
   const bool use_mpi_backend = (world_size > 1) || force_mpi;
 
+  double dict_load_start = MPI_Wtime();
   if (use_mpi_backend) {
     dict_text =
         LoadDictionaryShard(filename_dict, world_rank, world_size, &dict_size);
+  } else {
+    dict_text = LoadFile(filename_dict, &dict_size);
+  }
+  double dict_load_time = MPI_Wtime() - dict_load_start;
 
+  double word_list_load_start = MPI_Wtime();
+  if (use_mpi_backend) {
     if (world_rank == 0) {
       word_list_text = LoadFile(filename_word_list, &word_list_size);
     }
@@ -83,8 +112,18 @@ int main(int argc, char** argv) {
                 MPI_COMM_WORLD);
     }
   } else {
-    dict_text = LoadFile(filename_dict, &dict_size);
     word_list_text = LoadFile(filename_word_list, &word_list_size);
+  }
+  double word_list_load_time = MPI_Wtime() - word_list_load_start;
+
+  if (use_mpi_backend) {
+    ReportTimingMetric("io_dict_load", dict_load_time, world_rank, world_size);
+    ReportTimingMetric("io_word_list", word_list_load_time, world_rank,
+                       world_size);
+  } else if (world_rank == 0) {
+    std::cout << "[timing] io_dict_load " << dict_load_time << "s" << std::endl;
+    std::cout << "[timing] io_word_list " << word_list_load_time << "s"
+              << std::endl;
   }
 
   // Chose scheduling method

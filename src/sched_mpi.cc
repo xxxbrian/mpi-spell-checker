@@ -19,6 +19,34 @@ constexpr int TAG_RESP_HEADER = 200;
 constexpr int TAG_RESP_INDICES = 201;
 constexpr int TAG_TERMINATE = 300;
 
+struct StageTiming {
+  const char* name;
+  double duration;
+};
+
+void ReportStageTimings(const std::vector<StageTiming>& timings, int rank,
+                        int world_size) {
+  for (const auto& timing : timings) {
+    double local = timing.duration;
+    double sum = 0.0;
+    double min = 0.0;
+    double max = 0.0;
+
+    MPI_Reduce(&local, rank == 0 ? &sum : nullptr, 1, MPI_DOUBLE, MPI_SUM, 0,
+               MPI_COMM_WORLD);
+    MPI_Reduce(&local, rank == 0 ? &min : nullptr, 1, MPI_DOUBLE, MPI_MIN, 0,
+               MPI_COMM_WORLD);
+    MPI_Reduce(&local, rank == 0 ? &max : nullptr, 1, MPI_DOUBLE, MPI_MAX, 0,
+               MPI_COMM_WORLD);
+
+    if (rank == 0) {
+      double avg = sum / static_cast<double>(world_size);
+      std::cout << "[MPI][timing] " << timing.name << " avg=" << avg
+                << "s min=" << min << "s max=" << max << "s" << std::endl;
+    }
+  }
+}
+
 std::string NormalizeFirstLower(const std::string& word) {
   std::string normalized = word;
   if (!normalized.empty()) {
@@ -177,12 +205,18 @@ Misspelled RunMpi(const char* dict_text, size_t dict_size,
               << " ranks" << std::endl;
   }
 
+  double overall_start = MPI_Wtime();
+  std::vector<StageTiming> timings;
+
+  double stage_start = MPI_Wtime();
+
   // Step 1: Build local dictionary shard from the already-loaded dict_text
   // Since dict_text is already loaded by rank 0, we need to distribute it
   // For simplicity in basic version, all ranks build from provided text
   // (In production, would use MPI-IO from file directly)
   DistributedDict local_dict =
       BuildDistributedDict(dict_text, dict_size, rank, world_size);
+  timings.push_back({"dict_build", MPI_Wtime() - stage_start});
 
   if (rank == 0) {
     std::cout << "[MPI] Local dict shard size (rank 0): " << local_dict.Size()
@@ -195,6 +229,7 @@ Misspelled RunMpi(const char* dict_text, size_t dict_size,
   size_t bloom_byte_count = 0;
   const size_t bloom_hash_count = 3;
 
+  stage_start = MPI_Wtime();
   if (use_bloom) {
     unsigned long long local_word_count =
         static_cast<unsigned long long>(local_dict.Size());
@@ -223,16 +258,20 @@ Misspelled RunMpi(const char* dict_text, size_t dict_size,
                 << " bits and " << bloom_hash_count << " hashes" << std::endl;
     }
   }
+  timings.push_back({"bloom_setup", MPI_Wtime() - stage_start});
 
   // Step 2: Build word list (all ranks have the same word list)
+  stage_start = MPI_Wtime();
   std::vector<std::string> word_list =
       BuildMpiWordList(word_list_text, word_list_size);
+  timings.push_back({"word_list_parse", MPI_Wtime() - stage_start});
 
   if (rank == 0) {
     std::cout << "[MPI] Word list size: " << word_list.size() << std::endl;
   }
 
   // Step 3: Global in-dict check using Allreduce
+  stage_start = MPI_Wtime();
   std::vector<bool> in_dict(word_list.size(), false);
   for (size_t i = 0; i < word_list.size(); ++i) {
     bool local_hit = local_dict.Contains(word_list[i]);
@@ -241,6 +280,7 @@ Misspelled RunMpi(const char* dict_text, size_t dict_size,
                   MPI_COMM_WORLD);
     in_dict[i] = global_hit;
   }
+  timings.push_back({"global_in_dict", MPI_Wtime() - stage_start});
 
   // Step 4: Determine which words this rank owns (for candidate generation)
   std::vector<int> owned_word_indices;
@@ -256,6 +296,7 @@ Misspelled RunMpi(const char* dict_text, size_t dict_size,
   }
 
   // Step 5: Generate candidates for owned words
+  stage_start = MPI_Wtime();
   Misspelled local_misspelled;
   for (int word_idx : owned_word_indices) {
     DrainIncomingRequests(local_dict);
@@ -320,7 +361,9 @@ Misspelled RunMpi(const char* dict_text, size_t dict_size,
   DrainIncomingRequests(local_dict);
   SendTerminationSignals(rank, world_size);
   WaitForTerminations(local_dict, rank, world_size);
+  timings.push_back({"candidate_phase", MPI_Wtime() - stage_start});
 
+  stage_start = MPI_Wtime();
   // Step 6: Gather all results to rank 0
   Misspelled global_misspelled;
 
@@ -402,6 +445,11 @@ Misspelled RunMpi(const char* dict_text, size_t dict_size,
       }
     }
   }
+
+  timings.push_back({"gather_results", MPI_Wtime() - stage_start});
+  timings.push_back({"total_mpi", MPI_Wtime() - overall_start});
+
+  ReportStageTimings(timings, rank, world_size);
 
   return global_misspelled;
 }
