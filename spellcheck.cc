@@ -1,10 +1,12 @@
 #include <chrono>
+#include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <mpi.h>
 #include "include/candidates.h"
 #include "include/load_files.h"
 #include "include/sched_single.h"
+#include "include/mpi_utils.h"
 #include "include/sched_mpi.h"
 
 using namespace std;
@@ -34,18 +36,8 @@ int main(int argc, char** argv) {
 
   auto start = high_resolution_clock::now();  // Start timing
 
-  // Load dictionary and word list
   char* filename_dict = argv[1];
   char* filename_word_list = argv[2];
-
-  cout << "[*] Using dictionary: " << filename_dict << endl;
-  cout << "[*] Using word list: " << filename_word_list << endl;
-  cout << "[*] Bloom filter: " << (use_bloom ? "enabled" : "disabled") << endl;
-  cout << "[*] Force MPI: " << (force_mpi ? "enabled" : "disabled") << endl;
-
-  size_t dict_size, word_list_size;
-  char* dict_text = LoadFile(filename_dict, &dict_size);
-  char* word_list_text = LoadFile(filename_word_list, &word_list_size);
 
   int provided = 0, initialized = 0;
   MPI_Initialized(&initialized);
@@ -56,9 +48,48 @@ int main(int argc, char** argv) {
   MPI_Comm_size(MPI_COMM_WORLD, &world_size);
   MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
 
+  if (world_rank == 0) {
+    cout << "[*] Using dictionary: " << filename_dict << endl;
+    cout << "[*] Using word list: " << filename_word_list << endl;
+    cout << "[*] Bloom filter: " << (use_bloom ? "enabled" : "disabled") << endl;
+    cout << "[*] Force MPI: " << (force_mpi ? "enabled" : "disabled") << endl;
+  }
+
+  size_t dict_size = 0;
+  size_t word_list_size = 0;
+  char* dict_text = nullptr;
+  char* word_list_text = nullptr;
+
+  const bool use_mpi_backend = (world_size > 1) || force_mpi;
+
+  if (use_mpi_backend) {
+    dict_text =
+        LoadDictionaryShard(filename_dict, world_rank, world_size, &dict_size);
+
+    if (world_rank == 0) {
+      word_list_text = LoadFile(filename_word_list, &word_list_size);
+    }
+
+    unsigned long long wl_bytes =
+        static_cast<unsigned long long>(word_list_size);
+    MPI_Bcast(&wl_bytes, 1, MPI_UNSIGNED_LONG_LONG, 0, MPI_COMM_WORLD);
+    word_list_size = static_cast<size_t>(wl_bytes);
+
+    if (word_list_size > 0) {
+      if (world_rank != 0) {
+        word_list_text = static_cast<char*>(malloc(word_list_size));
+      }
+      MPI_Bcast(word_list_text, static_cast<int>(word_list_size), MPI_CHAR, 0,
+                MPI_COMM_WORLD);
+    }
+  } else {
+    dict_text = LoadFile(filename_dict, &dict_size);
+    word_list_text = LoadFile(filename_word_list, &word_list_size);
+  }
+
   // Chose scheduling method
   Misspelled misspelled;
-  if (world_size > 1 || force_mpi) {
+  if (use_mpi_backend) {
     misspelled =
         RunMpi(dict_text, dict_size, word_list_text, word_list_size, use_bloom);
   } else {
@@ -82,10 +113,12 @@ int main(int argc, char** argv) {
   auto minutes = duration / 60000;
   auto seconds = (duration % 60000) / 1000;
   auto milliseconds = duration % 1000;
-  cout << "[*] Output: " << out_filename << endl;
-  cout << "[*] Wall time: " << minutes << " mins " << seconds << " secs "
-       << milliseconds << " ms"
-       << "; " << duration << endl;
+  if (world_rank == 0) {
+    cout << "[*] Output: " << out_filename << endl;
+    cout << "[*] Wall time: " << minutes << " mins " << seconds << " secs "
+         << milliseconds << " ms"
+         << "; " << duration << endl;
+  }
 
   MPI_Barrier(MPI_COMM_WORLD);
   int finalized = 0;
