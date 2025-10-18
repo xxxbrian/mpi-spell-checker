@@ -47,6 +47,26 @@ void ReportStageTimings(const std::vector<StageTiming>& timings, int rank,
   }
 }
 
+void ReportBloomMetrics(long long checked, long long rejected,
+                        long long forwarded, long long confirmed, int rank,
+                        int world_size) {
+  long long local[4] = {checked, rejected, forwarded, confirmed};
+  long long global[4] = {0, 0, 0, 0};
+  MPI_Reduce(local, global, 4, MPI_LONG_LONG, MPI_SUM, 0, MPI_COMM_WORLD);
+
+  if (rank == 0) {
+    double reject_ratio =
+        global[0] > 0 ? (static_cast<double>(global[1]) / global[0]) * 100.0 : 0.0;
+    double confirm_ratio = global[2] > 0
+                               ? (static_cast<double>(global[3]) / global[2]) * 100.0
+                               : 0.0;
+    std::cout << "[MPI][bloom] checked=" << global[0]
+              << " rejected=" << global[1] << " (" << reject_ratio
+              << "%) forwarded=" << global[2] << " confirmed=" << global[3]
+              << " (" << confirm_ratio << "%)" << std::endl;
+  }
+}
+
 std::string NormalizeFirstLower(const std::string& word) {
   std::string normalized = word;
   if (!normalized.empty()) {
@@ -229,8 +249,9 @@ Misspelled RunMpi(const char* dict_text, size_t dict_size,
   size_t bloom_byte_count = 0;
   const size_t bloom_hash_count = 3;
 
-  stage_start = MPI_Wtime();
+  double bloom_elapsed = 0.0;
   if (use_bloom) {
+    stage_start = MPI_Wtime();
     unsigned long long local_word_count =
         static_cast<unsigned long long>(local_dict.Size());
     unsigned long long global_word_count = 0;
@@ -257,8 +278,11 @@ Misspelled RunMpi(const char* dict_text, size_t dict_size,
       std::cout << "[MPI] Bloom filter enabled with " << bloom_bit_count
                 << " bits and " << bloom_hash_count << " hashes" << std::endl;
     }
+    bloom_elapsed = MPI_Wtime() - stage_start;
   }
-  timings.push_back({"bloom_setup", MPI_Wtime() - stage_start});
+  if (use_bloom) {
+    timings.push_back({"bloom_setup", bloom_elapsed});
+  }
 
   // Step 2: Build word list (all ranks have the same word list)
   stage_start = MPI_Wtime();
@@ -297,6 +321,11 @@ Misspelled RunMpi(const char* dict_text, size_t dict_size,
 
   // Step 5: Generate candidates for owned words
   stage_start = MPI_Wtime();
+  long long bloom_checked = 0;
+  long long bloom_rejected = 0;
+  long long bloom_forwarded = 0;
+  long long bloom_confirmed = 0;
+
   Misspelled local_misspelled;
   for (int word_idx : owned_word_indices) {
     DrainIncomingRequests(local_dict);
@@ -316,14 +345,17 @@ Misspelled RunMpi(const char* dict_text, size_t dict_size,
         }
       } else {
         if (use_bloom) {
+          ++bloom_checked;
+          const std::string normalized = NormalizeFirstLower(cand);
           const uint8_t* peer_bits =
               all_bloom_bytes.data() +
               static_cast<size_t>(target_rank) * bloom_byte_count;
           if (!BloomFilter::MaybeContainsRaw(peer_bits, bloom_bit_count,
-                                             bloom_hash_count,
-                                             NormalizeFirstLower(cand))) {
+                                             bloom_hash_count, normalized)) {
+            ++bloom_rejected;
             continue;
           }
+          ++bloom_forwarded;
         }
         remote_candidates[target_rank].push_back(cand);
       }
@@ -342,6 +374,9 @@ Misspelled RunMpi(const char* dict_text, size_t dict_size,
             idx < static_cast<int>(remote_candidates[target_rank].size())) {
           verified.insert(remote_candidates[target_rank][idx]);
         }
+      }
+      if (use_bloom) {
+        bloom_confirmed += static_cast<long long>(hit_indices.size());
       }
     }
 
@@ -450,6 +485,10 @@ Misspelled RunMpi(const char* dict_text, size_t dict_size,
   timings.push_back({"total_mpi", MPI_Wtime() - overall_start});
 
   ReportStageTimings(timings, rank, world_size);
+  if (use_bloom) {
+    ReportBloomMetrics(bloom_checked, bloom_rejected, bloom_forwarded,
+                       bloom_confirmed, rank, world_size);
+  }
 
   return global_misspelled;
 }
