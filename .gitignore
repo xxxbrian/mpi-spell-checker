@@ -16,3 +16,7 @@ test.slurm
 .cache/
 compile_commands.json
 .zed
+
+# temp data
+script/
+slurm_out/
