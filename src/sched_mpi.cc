@@ -297,12 +297,150 @@ Misspelled RunMpi(const char* dict_text, size_t dict_size,
   // Step 3: Global in-dict check using Allreduce
   stage_start = MPI_Wtime();
   std::vector<bool> in_dict(word_list.size(), false);
-  for (size_t i = 0; i < word_list.size(); ++i) {
-    bool local_hit = local_dict.Contains(word_list[i]);
-    bool global_hit = false;
-    MPI_Allreduce(&local_hit, &global_hit, 1, MPI_C_BOOL, MPI_LOR,
+
+  if (world_size == 1) {
+    for (size_t i = 0; i < word_list.size(); ++i) {
+      if (local_dict.Contains(word_list[i])) {
+        in_dict[i] = true;
+      }
+    }
+  } else {
+    std::vector<std::vector<int>> send_word_indices(world_size);
+    std::vector<std::vector<std::string>> send_word_strings(world_size);
+
+    for (size_t idx = static_cast<size_t>(rank); idx < word_list.size();
+         idx += static_cast<size_t>(world_size)) {
+      const std::string& word = word_list[idx];
+      int owner = GetOwnerRank(word, world_size);
+      if (owner == rank) {
+        if (local_dict.Contains(word)) {
+          in_dict[idx] = true;
+        }
+      } else {
+        send_word_indices[owner].push_back(static_cast<int>(idx));
+        send_word_strings[owner].push_back(word);
+      }
+    }
+
+    std::vector<int> send_counts(world_size, 0);
+    for (int target = 0; target < world_size; ++target) {
+      if (target == rank) continue;
+      send_counts[target] = static_cast<int>(send_word_indices[target].size());
+    }
+
+    std::vector<int> recv_counts(world_size, 0);
+    MPI_Alltoall(send_counts.data(), 1, MPI_INT, recv_counts.data(), 1, MPI_INT,
+                 MPI_COMM_WORLD);
+
+    int total_send_words = 0;
+    for (int target = 0; target < world_size; ++target) {
+      total_send_words += send_counts[target];
+    }
+
+    int total_recv_words = 0;
+    for (int source = 0; source < world_size; ++source) {
+      total_recv_words += recv_counts[source];
+    }
+
+    std::vector<int> send_displs(world_size, 0);
+    std::vector<int> recv_displs(world_size, 0);
+    for (int i = 1; i < world_size; ++i) {
+      send_displs[i] = send_displs[i - 1] + send_counts[i - 1];
+      recv_displs[i] = recv_displs[i - 1] + recv_counts[i - 1];
+    }
+
+    std::vector<int> send_indices_flat(total_send_words);
+    std::vector<int> send_lengths(total_send_words);
+    for (int target = 0; target < world_size; ++target) {
+      int offset = send_displs[target];
+      for (int j = 0; j < send_counts[target]; ++j) {
+        send_indices_flat[offset + j] = send_word_indices[target][j];
+        send_lengths[offset + j] =
+            static_cast<int>(send_word_strings[target][j].size());
+      }
+    }
+
+    std::vector<int> recv_indices(total_recv_words);
+    std::vector<int> recv_lengths(total_recv_words);
+
+    int* send_indices_ptr = total_send_words ? send_indices_flat.data() : nullptr;
+    int* recv_indices_ptr = total_recv_words ? recv_indices.data() : nullptr;
+    MPI_Alltoallv(send_indices_ptr, send_counts.data(), send_displs.data(),
+                  MPI_INT, recv_indices_ptr, recv_counts.data(),
+                  recv_displs.data(), MPI_INT, MPI_COMM_WORLD);
+
+    int* send_lengths_ptr = total_send_words ? send_lengths.data() : nullptr;
+    int* recv_lengths_ptr = total_recv_words ? recv_lengths.data() : nullptr;
+    MPI_Alltoallv(send_lengths_ptr, send_counts.data(), send_displs.data(),
+                  MPI_INT, recv_lengths_ptr, recv_counts.data(),
+                  recv_displs.data(), MPI_INT, MPI_COMM_WORLD);
+
+    std::vector<int> send_bytes_counts(world_size, 0);
+    std::vector<int> send_bytes_displs(world_size, 0);
+    int total_send_bytes = 0;
+    for (int target = 0; target < world_size; ++target) {
+      int bytes = 0;
+      for (int j = 0; j < send_counts[target]; ++j) {
+        bytes += static_cast<int>(send_word_strings[target][j].size());
+      }
+      send_bytes_counts[target] = bytes;
+      if (target > 0) {
+        send_bytes_displs[target] =
+            send_bytes_displs[target - 1] + send_bytes_counts[target - 1];
+      }
+      total_send_bytes += bytes;
+    }
+
+    std::vector<int> recv_bytes_counts(world_size, 0);
+    std::vector<int> recv_bytes_displs(world_size, 0);
+    int total_recv_bytes = 0;
+    for (int source = 0; source < world_size; ++source) {
+      int bytes = 0;
+      int offset = recv_displs[source];
+      for (int j = 0; j < recv_counts[source]; ++j) {
+        bytes += recv_lengths[offset + j];
+      }
+      recv_bytes_counts[source] = bytes;
+      if (source > 0) {
+        recv_bytes_displs[source] =
+            recv_bytes_displs[source - 1] + recv_bytes_counts[source - 1];
+      }
+      total_recv_bytes += bytes;
+    }
+
+    std::vector<char> send_bytes(total_send_bytes);
+    for (int target = 0; target < world_size; ++target) {
+      int byte_offset = send_bytes_displs[target];
+      for (int j = 0; j < send_counts[target]; ++j) {
+        const std::string& word = send_word_strings[target][j];
+        std::memcpy(send_bytes.data() + byte_offset, word.data(), word.size());
+        byte_offset += static_cast<int>(word.size());
+      }
+    }
+
+    std::vector<char> recv_bytes(total_recv_bytes);
+
+    char* send_bytes_ptr = total_send_bytes ? send_bytes.data() : nullptr;
+    char* recv_bytes_ptr = total_recv_bytes ? recv_bytes.data() : nullptr;
+    MPI_Alltoallv(send_bytes_ptr, send_bytes_counts.data(),
+                  send_bytes_displs.data(), MPI_CHAR, recv_bytes_ptr,
+                  recv_bytes_counts.data(), recv_bytes_displs.data(), MPI_CHAR,
                   MPI_COMM_WORLD);
-    in_dict[i] = global_hit;
+
+    for (int source = 0; source < world_size; ++source) {
+      int length_offset = recv_displs[source];
+      int byte_offset = recv_bytes_displs[source];
+      for (int j = 0; j < recv_counts[source]; ++j) {
+        int idx = recv_indices[length_offset + j];
+        int len = recv_lengths[length_offset + j];
+        std::string word(recv_bytes.data() + byte_offset,
+                         recv_bytes.data() + byte_offset + len);
+        if (local_dict.Contains(word)) {
+          in_dict[idx] = true;
+        }
+        byte_offset += len;
+      }
+    }
   }
   timings.push_back({"global_in_dict", MPI_Wtime() - stage_start});
 
