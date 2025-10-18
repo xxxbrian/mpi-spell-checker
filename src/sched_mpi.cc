@@ -2,8 +2,12 @@
 #include <mpi.h>
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
 #include <cstring>
 #include <iostream>
+#include <iterator>
+#include <limits>
+#include <stdexcept>
 #include <unordered_set>
 #include <vector>
 #include "mpi_candidates.h"
@@ -18,6 +22,8 @@ constexpr int TAG_REQ_PAYLOAD = 102;
 constexpr int TAG_RESP_HEADER = 200;
 constexpr int TAG_RESP_INDICES = 201;
 constexpr int TAG_TERMINATE = 300;
+constexpr int TAG_GATHER_SIZE = 400;
+constexpr int TAG_GATHER_DATA = 401;
 
 struct StageTiming {
   const char* name;
@@ -65,6 +71,76 @@ void ReportBloomMetrics(long long checked, long long rejected,
               << "%) forwarded=" << global[2] << " confirmed=" << global[3]
               << " (" << confirm_ratio << "%)" << std::endl;
   }
+}
+
+void AppendUint32(std::vector<char>& buffer, uint32_t value) {
+  char encoded[sizeof(uint32_t)];
+  std::memcpy(encoded, &value, sizeof(uint32_t));
+  buffer.insert(buffer.end(), encoded, encoded + sizeof(uint32_t));
+}
+
+uint32_t ReadUint32(const std::vector<char>& buffer, size_t* offset) {
+  if (*offset + sizeof(uint32_t) > buffer.size()) {
+    throw std::runtime_error("Buffer underflow while decoding uint32");
+  }
+  uint32_t value = 0;
+  std::memcpy(&value, buffer.data() + *offset, sizeof(uint32_t));
+  *offset += sizeof(uint32_t);
+  return value;
+}
+
+std::vector<char> SerializeMisspelled(const Misspelled& misspelled) {
+  std::vector<char> buffer;
+  buffer.reserve(16 + misspelled.size() * 32);
+  AppendUint32(buffer, static_cast<uint32_t>(misspelled.size()));
+  for (const Line& line : misspelled) {
+    AppendUint32(buffer, static_cast<uint32_t>(line.word.size()));
+    buffer.insert(buffer.end(), line.word.begin(), line.word.end());
+
+    AppendUint32(buffer, static_cast<uint32_t>(line.candidates.size()));
+    for (const std::string& cand : line.candidates) {
+      AppendUint32(buffer, static_cast<uint32_t>(cand.size()));
+      buffer.insert(buffer.end(), cand.begin(), cand.end());
+    }
+  }
+  return buffer;
+}
+
+Misspelled DeserializeMisspelled(const std::vector<char>& buffer) {
+  Misspelled result;
+  size_t offset = 0;
+  uint32_t line_count = ReadUint32(buffer, &offset);
+  result.reserve(line_count);
+
+  for (uint32_t i = 0; i < line_count; ++i) {
+    uint32_t word_len = ReadUint32(buffer, &offset);
+    if (offset + word_len > buffer.size()) {
+      throw std::runtime_error("Buffer underflow while decoding word");
+    }
+    std::string word(buffer.data() + offset, buffer.data() + offset + word_len);
+    offset += word_len;
+
+    uint32_t cand_count = ReadUint32(buffer, &offset);
+    Line line;
+    line.word = std::move(word);
+    line.candidates.reserve(cand_count);
+    for (uint32_t j = 0; j < cand_count; ++j) {
+      uint32_t cand_len = ReadUint32(buffer, &offset);
+      if (offset + cand_len > buffer.size()) {
+        throw std::runtime_error("Buffer underflow while decoding candidate");
+      }
+      line.candidates.emplace_back(buffer.data() + offset,
+                                   buffer.data() + offset + cand_len);
+      offset += cand_len;
+    }
+    result.push_back(std::move(line));
+  }
+
+  if (offset != buffer.size()) {
+    throw std::runtime_error("Trailing bytes found in misspelled payload");
+  }
+
+  return result;
 }
 
 std::string NormalizeFirstLower(const std::string& word) {
@@ -545,43 +621,25 @@ Misspelled RunMpi(const char* dict_text, size_t dict_size,
 
     // Receive from other ranks
     for (int src_rank = 1; src_rank < world_size; ++src_rank) {
-      int recv_count = 0;
-      MPI_Recv(&recv_count, 1, MPI_INT, src_rank, 5, MPI_COMM_WORLD,
-               MPI_STATUS_IGNORE);
-
-      for (int i = 0; i < recv_count; ++i) {
-        // Receive word
-        int word_len = 0;
-        MPI_Recv(&word_len, 1, MPI_INT, src_rank, 6, MPI_COMM_WORLD,
-                 MPI_STATUS_IGNORE);
-        char* word_buf = new char[word_len + 1];
-        MPI_Recv(word_buf, word_len, MPI_CHAR, src_rank, 7, MPI_COMM_WORLD,
-                 MPI_STATUS_IGNORE);
-        word_buf[word_len] = '\0';
-
-        // Receive candidates count
-        int cand_count = 0;
-        MPI_Recv(&cand_count, 1, MPI_INT, src_rank, 8, MPI_COMM_WORLD,
-                 MPI_STATUS_IGNORE);
-
-        Line line;
-        line.word = std::string(word_buf);
-        delete[] word_buf;
-
-        for (int j = 0; j < cand_count; ++j) {
-          int cand_len = 0;
-          MPI_Recv(&cand_len, 1, MPI_INT, src_rank, 9, MPI_COMM_WORLD,
-                   MPI_STATUS_IGNORE);
-          char* cand_buf = new char[cand_len + 1];
-          MPI_Recv(cand_buf, cand_len, MPI_CHAR, src_rank, 10, MPI_COMM_WORLD,
-                   MPI_STATUS_IGNORE);
-          cand_buf[cand_len] = '\0';
-          line.candidates.push_back(std::string(cand_buf));
-          delete[] cand_buf;
-        }
-
-        global_misspelled.push_back(line);
+      unsigned long long payload_size = 0;
+      MPI_Recv(&payload_size, 1, MPI_UNSIGNED_LONG_LONG, src_rank,
+               TAG_GATHER_SIZE, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      if (payload_size >
+          static_cast<unsigned long long>(std::numeric_limits<int>::max())) {
+        throw std::runtime_error("Gather payload exceeds MPI send limit");
       }
+
+      std::vector<char> buffer(static_cast<size_t>(payload_size));
+      if (payload_size > 0) {
+        MPI_Recv(buffer.data(), static_cast<int>(payload_size), MPI_CHAR,
+                 src_rank, TAG_GATHER_DATA, MPI_COMM_WORLD,
+                 MPI_STATUS_IGNORE);
+      }
+
+      Misspelled remote = DeserializeMisspelled(buffer);
+      global_misspelled.insert(global_misspelled.end(),
+                               std::make_move_iterator(remote.begin()),
+                               std::make_move_iterator(remote.end()));
     }
 
     // Sort final results
@@ -598,24 +656,18 @@ Misspelled RunMpi(const char* dict_text, size_t dict_size,
 
   } else {
     // Send local results to rank 0
-    int send_count = local_misspelled.size();
-    MPI_Send(&send_count, 1, MPI_INT, 0, 5, MPI_COMM_WORLD);
+    std::vector<char> payload = SerializeMisspelled(local_misspelled);
+    unsigned long long payload_size = payload.size();
+    if (payload_size >
+        static_cast<unsigned long long>(std::numeric_limits<int>::max())) {
+      throw std::runtime_error("Gather payload exceeds MPI send limit");
+    }
 
-    for (const Line& line : local_misspelled) {
-      // Send word
-      int word_len = line.word.size();
-      MPI_Send(&word_len, 1, MPI_INT, 0, 6, MPI_COMM_WORLD);
-      MPI_Send(line.word.c_str(), word_len, MPI_CHAR, 0, 7, MPI_COMM_WORLD);
-
-      // Send candidates
-      int cand_count = line.candidates.size();
-      MPI_Send(&cand_count, 1, MPI_INT, 0, 8, MPI_COMM_WORLD);
-
-      for (const std::string& cand : line.candidates) {
-        int cand_len = cand.size();
-        MPI_Send(&cand_len, 1, MPI_INT, 0, 9, MPI_COMM_WORLD);
-        MPI_Send(cand.c_str(), cand_len, MPI_CHAR, 0, 10, MPI_COMM_WORLD);
-      }
+    MPI_Send(&payload_size, 1, MPI_UNSIGNED_LONG_LONG, 0, TAG_GATHER_SIZE,
+             MPI_COMM_WORLD);
+    if (payload_size > 0) {
+      MPI_Send(payload.data(), static_cast<int>(payload_size), MPI_CHAR, 0,
+               TAG_GATHER_DATA, MPI_COMM_WORLD);
     }
   }
 
