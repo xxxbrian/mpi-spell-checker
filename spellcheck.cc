@@ -76,7 +76,7 @@ int main(int argc, char** argv) {
   char* dict_text = nullptr;
   char* word_list_text = nullptr;
 
-  const bool use_mpi_backend = force_mpi && (world_size > 1);
+  const bool use_mpi_backend = force_mpi;
 
   double dict_load_start = MPI_Wtime();
   if (use_mpi_backend) {
