@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
+#include <string_view>
 
 char* LoadDictionaryShard(const char* filename, int rank, int world_size,
                           size_t* shard_size) {
@@ -85,12 +86,27 @@ std::vector<std::string> BuildMpiWordList(const char* text, size_t text_size) {
   return words;
 }
 
-int GetOwnerRank(const std::string& word, int world_size) {
-  std::string key = word;
-  if (!key.empty()) {
-    key[0] = static_cast<char>(std::tolower(static_cast<unsigned char>(key[0])));
+bool NormalizeFirstLower(std::string_view word, std::string* out) {
+  if (!out || word.empty()) {
+    return false;
   }
+  unsigned char first = static_cast<unsigned char>(word[0]);
+  char lower = static_cast<char>(std::tolower(first));
+  if (lower == static_cast<char>(first)) {
+    return false;
+  }
+  out->assign(word.begin(), word.end());
+  (*out)[0] = lower;
+  return true;
+}
+
+int GetOwnerRank(const std::string& word, int world_size) {
   std::hash<std::string> hasher;
-  size_t hash_value = hasher(key);
+  std::string normalized;
+  const std::string* key = &word;
+  if (NormalizeFirstLower(word, &normalized)) {
+    key = &normalized;
+  }
+  size_t hash_value = hasher(*key);
   return hash_value % world_size;
 }

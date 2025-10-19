@@ -4,6 +4,7 @@
 #include <mpi.h>
 #include <cstddef>
 #include <string>
+#include <string_view>
 #include <vector>
 #include "mpi_dict.h"
 
@@ -14,6 +15,10 @@ char* LoadDictionaryShard(const char* filename, int rank, int world_size,
 
 // Build word list from text (all ranks can do this independently or use broadcast)
 std::vector<std::string> BuildMpiWordList(const char* text, size_t text_size);
+
+// Normalize the first character to lowercase when needed.
+// Returns true when normalization happened and stores the result in `out`.
+bool NormalizeFirstLower(std::string_view word, std::string* out);
 
 // Compute owner rank for a given word (hash-based distribution)
 int GetOwnerRank(const std::string& word, int world_size);

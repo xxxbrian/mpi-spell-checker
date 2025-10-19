@@ -1,7 +1,6 @@
 #include "sched_mpi.h"
 #include <mpi.h>
 #include <algorithm>
-#include <cctype>
 #include <cstdint>
 #include <cstring>
 #include <iostream>
@@ -142,15 +141,6 @@ Misspelled DeserializeMisspelled(const std::vector<char>& buffer) {
   }
 
   return result;
-}
-
-std::string NormalizeFirstLower(const std::string& word) {
-  std::string normalized = word;
-  if (!normalized.empty()) {
-    normalized[0] =
-        static_cast<char>(std::tolower(static_cast<unsigned char>(normalized[0])));
-  }
-  return normalized;
 }
 
 void DrainIncomingRequests(const DistributedDict& local_dict) {
@@ -340,7 +330,12 @@ Misspelled RunMpi(const char* dict_text, size_t dict_size,
     local_bloom = BloomFilter(bloom_bit_count, bloom_hash_count);
     bloom_bit_count = local_bloom.BitCount();
     for (const auto& dict_word : local_dict.Words()) {
-      local_bloom.Add(NormalizeFirstLower(dict_word));
+      std::string normalized;
+      const std::string* bloom_key = &dict_word;
+      if (NormalizeFirstLower(dict_word, &normalized)) {
+        bloom_key = &normalized;
+      }
+      local_bloom.Add(*bloom_key);
     }
 
     bloom_byte_count = local_bloom.ByteSize();
@@ -461,12 +456,16 @@ Misspelled RunMpi(const char* dict_text, size_t dict_size,
       } else {
         if (use_bloom) {
           ++bloom_checked;
-          const std::string normalized = NormalizeFirstLower(cand);
+          std::string normalized;
+          const std::string* key = &cand;
+          if (NormalizeFirstLower(cand, &normalized)) {
+            key = &normalized;
+          }
           const uint8_t* peer_bits =
               all_bloom_bytes.data() +
               static_cast<size_t>(target_rank) * bloom_byte_count;
           if (!BloomFilter::MaybeContainsRaw(peer_bits, bloom_bit_count,
-                                             bloom_hash_count, normalized)) {
+                                             bloom_hash_count, *key)) {
             ++bloom_rejected;
             continue;
           }

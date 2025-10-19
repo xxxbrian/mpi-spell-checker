@@ -18,13 +18,9 @@ bool DistributedDict::Contains(const std::string& word) const {
     return true;
   }
 
-  // First-letter lowercase match (e.ii in spec)
-  if (!word.empty() && std::isupper(word[0])) {
-    std::string lower_first = word;
-    lower_first[0] = std::tolower(lower_first[0]);
-    if (words_.count(lower_first)) {
+  std::string normalized;
+  if (NormalizeFirstLower(word, &normalized) && words_.count(normalized)) {
       return true;
-    }
   }
 
   return false;

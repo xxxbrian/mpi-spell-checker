@@ -5,8 +5,6 @@
 #include <unordered_set>
 #include <vector>
 
-#include "mpi_string_exchange.h"
-
 // MPI-specific dictionary shard for distributed spell checking
 class DistributedDict {
  public:
