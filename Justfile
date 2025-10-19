@@ -17,3 +17,19 @@ run-local:
 test: build
     @echo "Testing..."
     ./build/test
+
+fmt:
+    @echo "Formatting..."
+    @find include src -type f \( -name "*.h" -o -name "*.cc" -o -name "*.cpp" -o -name "*.c" \) \
+        -print -exec clang-format -i {} \;
+    @if [ -f spellcheck.cc ]; then \
+        clang-format -i spellcheck.cc; \
+    fi
+
+fmt-check:
+    @echo "Formatting (dry run)..."
+    @find include src -type f \( -name "*.h" -o -name "*.cc" -o -name "*.cpp" -o -name "*.c" \) \
+        -print -exec clang-format --dry-run --Werror {} \;
+    @if [ -f spellcheck.cc ]; then \
+        clang-format --dry-run --Werror spellcheck.cc; \
+    fi
