@@ -30,8 +30,7 @@ void BKTree::AddNode(const std::string& word) {
   }
 }
 
-void BKTree::SearchNode(const std::string& word, const int tol,
-                        std::vector<std::string>* result) {
+void BKTree::SearchNode(const std::string& word, const int tol, std::vector<std::string>* result) {
 
   std::queue<BKNode*> nodes;
   nodes.push(&root);
@@ -72,8 +71,7 @@ void BKTree::PrintTree() {
     }
     std::cout << current_distance << ": " << *current->word << std::endl;
 
-    for (auto it = current->children.rbegin(); it != current->children.rend();
-         ++it) {
+    for (auto it = current->children.rbegin(); it != current->children.rend(); ++it) {
       nodes.push(std::make_tuple(it->second, current_depth + 1, it->first));
     }
   }

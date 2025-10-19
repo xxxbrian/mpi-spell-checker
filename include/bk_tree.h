@@ -31,8 +31,7 @@ class BKTree {
   ~BKTree();
 
   void AddNode(const std::string& word);
-  void SearchNode(const std::string& word, int tol,
-                  std::vector<std::string>* result);
+  void SearchNode(const std::string& word, int tol, std::vector<std::string>* result);
   void PrintTree();
 
  private:

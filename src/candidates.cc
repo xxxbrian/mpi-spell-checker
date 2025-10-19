@@ -33,10 +33,7 @@ Misspelled GetMisspelled(const WordList& word_list, Dictionary& dict) {
     }
 
 #pragma omp critical
-    {
-      misspelled.insert(misspelled.end(), misspelled_local.begin(),
-                        misspelled_local.end());
-    }
+    { misspelled.insert(misspelled.end(), misspelled_local.begin(), misspelled_local.end()); }
   }
 
   return misspelled;
@@ -52,9 +49,9 @@ void SaveMisspelled(Misspelled& misspelled, FILE* file) {
   for (auto& line : misspelled) {
     // words should be sorted in ascending order using strcmp.
     std::sort(line.candidates.begin(), line.candidates.end(),
-         [](const std::string& a, const std::string& b) {
-           return std::strcmp(a.c_str(), b.c_str()) < 0;
-         });
+              [](const std::string& a, const std::string& b) {
+                return std::strcmp(a.c_str(), b.c_str()) < 0;
+              });
     std::string words_str;
     for (auto& word : line.candidates) {
       words_str += " " + word;

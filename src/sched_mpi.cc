@@ -9,8 +9,8 @@
 #include <stdexcept>
 #include <unordered_set>
 #include <vector>
-#include "mpi_candidates.h"
 #include "mpi_bloom.h"
+#include "mpi_candidates.h"
 #include "mpi_dict.h"
 #include "mpi_string_exchange.h"
 #include "mpi_utils.h"
@@ -40,9 +40,8 @@ class ScopedTimer {
  public:
   ScopedTimer(const char* label, std::vector<StageTiming>& sink)
       : label_(label), sink_(sink), start_(MPI_Wtime()) {}
-  ~ScopedTimer() {
-    sink_.push_back({label_, MPI_Wtime() - start_});
-  }
+
+  ~ScopedTimer() { sink_.push_back({label_, MPI_Wtime() - start_}); }
 
  private:
   const char* label_;
@@ -78,42 +77,35 @@ constexpr size_t kBloomHashCount = 3;
 
 // Forward declarations for helper routines defined later in this file.
 void DrainIncomingRequests(const DistributedDict& local_dict);
-void SendCandidateBatch(int target_rank, int word_idx,
-                        const std::vector<std::string>& candidates);
+void SendCandidateBatch(int target_rank, int word_idx, const std::vector<std::string>& candidates);
 std::vector<int> WaitForResponse(int target_rank, int expected_word_idx,
                                  const DistributedDict& local_dict);
 void SendTerminationSignals(int rank, int world_size);
-void WaitForTerminations(const DistributedDict& local_dict, int rank,
-                         int world_size);
+void WaitForTerminations(const DistributedDict& local_dict, int rank, int world_size);
 std::vector<char> SerializeMisspelled(const Misspelled& misspelled);
 Misspelled DeserializeMisspelled(const std::vector<char>& buffer);
 
-void ReportStageTimings(const std::vector<StageTiming>& timings, int rank,
-                        int world_size) {
+void ReportStageTimings(const std::vector<StageTiming>& timings, int rank, int world_size) {
   for (const auto& timing : timings) {
     double local = timing.duration;
     double sum = 0.0;
     double min = 0.0;
     double max = 0.0;
 
-    MPI_Reduce(&local, rank == 0 ? &sum : nullptr, 1, MPI_DOUBLE, MPI_SUM, 0,
-               MPI_COMM_WORLD);
-    MPI_Reduce(&local, rank == 0 ? &min : nullptr, 1, MPI_DOUBLE, MPI_MIN, 0,
-               MPI_COMM_WORLD);
-    MPI_Reduce(&local, rank == 0 ? &max : nullptr, 1, MPI_DOUBLE, MPI_MAX, 0,
-               MPI_COMM_WORLD);
+    MPI_Reduce(&local, rank == 0 ? &sum : nullptr, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+    MPI_Reduce(&local, rank == 0 ? &min : nullptr, 1, MPI_DOUBLE, MPI_MIN, 0, MPI_COMM_WORLD);
+    MPI_Reduce(&local, rank == 0 ? &max : nullptr, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
 
     if (rank == 0) {
       double avg = sum / static_cast<double>(world_size);
-      std::cout << "[MPI][timing] " << timing.name << " avg=" << avg
-                << "s min=" << min << "s max=" << max << "s" << std::endl;
+      std::cout << "[MPI][timing] " << timing.name << " avg=" << avg << "s min=" << min
+                << "s max=" << max << "s" << std::endl;
     }
   }
 }
 
-void ReportBloomMetrics(long long checked, long long rejected,
-                        long long forwarded, long long confirmed, int rank,
-                        int world_size) {
+void ReportBloomMetrics(long long checked, long long rejected, long long forwarded,
+                        long long confirmed, int rank, int world_size) {
   long long local[4] = {checked, rejected, forwarded, confirmed};
   long long global[4] = {0, 0, 0, 0};
   MPI_Reduce(local, global, 4, MPI_LONG_LONG, MPI_SUM, 0, MPI_COMM_WORLD);
@@ -121,32 +113,26 @@ void ReportBloomMetrics(long long checked, long long rejected,
   if (rank == 0) {
     double reject_ratio =
         global[0] > 0 ? (static_cast<double>(global[1]) / global[0]) * 100.0 : 0.0;
-    double confirm_ratio = global[2] > 0
-                               ? (static_cast<double>(global[3]) / global[2]) * 100.0
-                               : 0.0;
-    std::cout << "[MPI][bloom] checked=" << global[0]
-              << " rejected=" << global[1] << " (" << reject_ratio
-              << "%) forwarded=" << global[2] << " confirmed=" << global[3]
-              << " (" << confirm_ratio << "%)" << std::endl;
+    double confirm_ratio =
+        global[2] > 0 ? (static_cast<double>(global[3]) / global[2]) * 100.0 : 0.0;
+    std::cout << "[MPI][bloom] checked=" << global[0] << " rejected=" << global[1] << " ("
+              << reject_ratio << "%) forwarded=" << global[2] << " confirmed=" << global[3] << " ("
+              << confirm_ratio << "%)" << std::endl;
   }
 }
 
-DistributedDict BuildDictionaryStage(const char* dict_text, size_t dict_size,
-                                     int rank, int world_size,
-                                     std::vector<StageTiming>& timings) {
+DistributedDict BuildDictionaryStage(const char* dict_text, size_t dict_size, int rank,
+                                     int world_size, std::vector<StageTiming>& timings) {
   ScopedTimer timer("dict_build", timings);
-  DistributedDict dict =
-      BuildDistributedDict(dict_text, dict_size, rank, world_size);
+  DistributedDict dict = BuildDistributedDict(dict_text, dict_size, rank, world_size);
   if (rank == 0) {
-    std::cout << "[MPI] Local dict shard size (rank 0): " << dict.Size()
-              << std::endl;
+    std::cout << "[MPI] Local dict shard size (rank 0): " << dict.Size() << std::endl;
   }
   return dict;
 }
 
-BloomConfig SetupBloomStage(bool use_bloom, const DistributedDict& local_dict,
-                            int rank, int world_size,
-                            std::vector<StageTiming>& timings) {
+BloomConfig SetupBloomStage(bool use_bloom, const DistributedDict& local_dict, int rank,
+                            int world_size, std::vector<StageTiming>& timings) {
   BloomConfig config;
   if (!use_bloom) {
     return config;
@@ -154,11 +140,10 @@ BloomConfig SetupBloomStage(bool use_bloom, const DistributedDict& local_dict,
 
   ScopedTimer timer("bloom_setup", timings);
 
-  unsigned long long local_word_count =
-      static_cast<unsigned long long>(local_dict.Size());
+  unsigned long long local_word_count = static_cast<unsigned long long>(local_dict.Size());
   unsigned long long global_word_count = 0;
-  MPI_Allreduce(&local_word_count, &global_word_count, 1,
-                MPI_UNSIGNED_LONG_LONG, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(&local_word_count, &global_word_count, 1, MPI_UNSIGNED_LONG_LONG, MPI_SUM,
+                MPI_COMM_WORLD);
 
   size_t total_words = static_cast<size_t>(global_word_count);
   size_t bloom_bit_count = std::max<size_t>(total_words * 12, 1024ULL);
@@ -179,25 +164,22 @@ BloomConfig SetupBloomStage(bool use_bloom, const DistributedDict& local_dict,
   config.byte_count = local_bloom.ByteSize();
   config.all_bytes.resize(static_cast<size_t>(world_size) * config.byte_count);
   const auto& local_bits = local_bloom.Bits();
-  MPI_Allgather(const_cast<uint8_t*>(local_bits.data()),
-                static_cast<int>(config.byte_count), MPI_UNSIGNED_CHAR,
-                config.all_bytes.data(), static_cast<int>(config.byte_count),
+  MPI_Allgather(const_cast<uint8_t*>(local_bits.data()), static_cast<int>(config.byte_count),
+                MPI_UNSIGNED_CHAR, config.all_bytes.data(), static_cast<int>(config.byte_count),
                 MPI_UNSIGNED_CHAR, MPI_COMM_WORLD);
 
   if (rank == 0) {
-    std::cout << "[MPI] Bloom filter enabled with " << config.bit_count
-              << " bits and " << kBloomHashCount << " hashes" << std::endl;
+    std::cout << "[MPI] Bloom filter enabled with " << config.bit_count << " bits and "
+              << kBloomHashCount << " hashes" << std::endl;
   }
 
   return config;
 }
 
-std::vector<std::string> BuildWordListStage(const char* word_list_text,
-                                            size_t word_list_size, int rank,
-                                            std::vector<StageTiming>& timings) {
+std::vector<std::string> BuildWordListStage(const char* word_list_text, size_t word_list_size,
+                                            int rank, std::vector<StageTiming>& timings) {
   ScopedTimer timer("word_list_parse", timings);
-  std::vector<std::string> words =
-      BuildMpiWordList(word_list_text, word_list_size);
+  std::vector<std::string> words = BuildMpiWordList(word_list_text, word_list_size);
   if (rank == 0) {
     std::cout << "[MPI] Word list size: " << words.size() << std::endl;
   }
@@ -205,9 +187,8 @@ std::vector<std::string> BuildWordListStage(const char* word_list_text,
 }
 
 MembershipResult ComputeMembershipStage(const DistributedDict& local_dict,
-                                        const std::vector<std::string>& word_list,
-                                        int rank, int world_size,
-                                        std::vector<StageTiming>& timings) {
+                                        const std::vector<std::string>& word_list, int rank,
+                                        int world_size, std::vector<StageTiming>& timings) {
   ScopedTimer timer("owner_lookup", timings);
   MembershipResult result;
   result.in_dict.assign(word_list.size(), false);
@@ -237,8 +218,7 @@ MembershipResult ComputeMembershipStage(const DistributedDict& local_dict,
     }
 
     StringExchangePlan plan;
-    PrepareStringExchange(outbound, &outbound_indices, rank, world_size,
-                          &plan);
+    PrepareStringExchange(outbound, &outbound_indices, rank, world_size, &plan);
     ExecuteStringExchange(&plan);
 
     std::vector<std::vector<std::string>> inbound;
@@ -263,18 +243,18 @@ MembershipResult ComputeMembershipStage(const DistributedDict& local_dict,
   }
 
   if (rank == 0) {
-    std::cout << "[MPI] Rank 0 owns " << result.owned_indices.size()
-              << " misspelled words" << std::endl;
+    std::cout << "[MPI] Rank 0 owns " << result.owned_indices.size() << " misspelled words"
+              << std::endl;
   }
 
   return result;
 }
 
-CandidateStageOutput ProcessCandidatesStage(
-    const std::vector<std::string>& word_list,
-    const std::vector<int>& owned_indices, const DistributedDict& local_dict,
-    const BloomConfig& bloom_config, int rank, int world_size,
-    std::vector<StageTiming>& timings) {
+CandidateStageOutput ProcessCandidatesStage(const std::vector<std::string>& word_list,
+                                            const std::vector<int>& owned_indices,
+                                            const DistributedDict& local_dict,
+                                            const BloomConfig& bloom_config, int rank,
+                                            int world_size, std::vector<StageTiming>& timings) {
   ScopedTimer timer("candidate_phase", timings);
   CandidateStageOutput output;
 
@@ -288,8 +268,7 @@ CandidateStageOutput ProcessCandidatesStage(
     DrainIncomingRequests(local_dict);
 
     const std::string& word = word_list[word_idx];
-    std::vector<std::string> candidates =
-        GenerateEditDistance1Candidates(word);
+    std::vector<std::string> candidates = GenerateEditDistance1Candidates(word);
 
     std::unordered_set<std::string> verified;
     std::vector<std::vector<std::string>> remote_candidates(world_size);
@@ -310,10 +289,9 @@ CandidateStageOutput ProcessCandidatesStage(
             key = &normalized;
           }
           const uint8_t* peer_bits =
-              bloom_bytes->data() +
-              static_cast<size_t>(target_rank) * bloom_config.byte_count;
-          if (!BloomFilter::MaybeContainsRaw(peer_bits, bloom_config.bit_count,
-                                             kBloomHashCount, *key)) {
+              bloom_bytes->data() + static_cast<size_t>(target_rank) * bloom_config.byte_count;
+          if (!BloomFilter::MaybeContainsRaw(peer_bits, bloom_config.bit_count, kBloomHashCount,
+                                             *key)) {
             ++output.stats.rejected;
             continue;
           }
@@ -324,16 +302,16 @@ CandidateStageOutput ProcessCandidatesStage(
     }
 
     for (int target_rank = 0; target_rank < world_size; ++target_rank) {
-      if (target_rank == rank) continue;
-      if (remote_candidates[target_rank].empty()) continue;
+      if (target_rank == rank)
+        continue;
+      if (remote_candidates[target_rank].empty())
+        continue;
       DrainIncomingRequests(local_dict);
 
       SendCandidateBatch(target_rank, word_idx, remote_candidates[target_rank]);
-      std::vector<int> hit_indices =
-          WaitForResponse(target_rank, word_idx, local_dict);
+      std::vector<int> hit_indices = WaitForResponse(target_rank, word_idx, local_dict);
       for (int idx : hit_indices) {
-        if (idx >= 0 &&
-            idx < static_cast<int>(remote_candidates[target_rank].size())) {
+        if (idx >= 0 && idx < static_cast<int>(remote_candidates[target_rank].size())) {
           verified.insert(remote_candidates[target_rank][idx]);
         }
       }
@@ -356,27 +334,23 @@ CandidateStageOutput ProcessCandidatesStage(
   return output;
 }
 
-Misspelled GatherResultsStage(const Misspelled& local_misspelled, int rank,
-                              int world_size,
+Misspelled GatherResultsStage(const Misspelled& local_misspelled, int rank, int world_size,
                               std::vector<StageTiming>& timings) {
   ScopedTimer timer("gather_results", timings);
   if (rank == 0) {
     Misspelled global = local_misspelled;
     for (int src_rank = 1; src_rank < world_size; ++src_rank) {
       unsigned long long payload_size = 0;
-      MPI_Recv(&payload_size, 1, MPI_UNSIGNED_LONG_LONG, src_rank,
-               TagValue(MpiTag::kGatherSize), MPI_COMM_WORLD,
-               MPI_STATUS_IGNORE);
-      if (payload_size >
-          static_cast<unsigned long long>(std::numeric_limits<int>::max())) {
+      MPI_Recv(&payload_size, 1, MPI_UNSIGNED_LONG_LONG, src_rank, TagValue(MpiTag::kGatherSize),
+               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      if (payload_size > static_cast<unsigned long long>(std::numeric_limits<int>::max())) {
         throw std::runtime_error("Gather payload exceeds MPI send limit");
       }
 
       std::vector<char> buffer(static_cast<size_t>(payload_size));
       if (payload_size > 0) {
-        MPI_Recv(buffer.data(), static_cast<int>(payload_size), MPI_CHAR,
-                 src_rank, TagValue(MpiTag::kGatherData), MPI_COMM_WORLD,
-                 MPI_STATUS_IGNORE);
+        MPI_Recv(buffer.data(), static_cast<int>(payload_size), MPI_CHAR, src_rank,
+                 TagValue(MpiTag::kGatherData), MPI_COMM_WORLD, MPI_STATUS_IGNORE);
       }
 
       Misspelled remote = DeserializeMisspelled(buffer);
@@ -384,20 +358,18 @@ Misspelled GatherResultsStage(const Misspelled& local_misspelled, int rank,
                     std::make_move_iterator(remote.end()));
     }
 
-    std::cout << "[MPI] Total misspelled words: " << global.size()
-              << std::endl;
+    std::cout << "[MPI] Total misspelled words: " << global.size() << std::endl;
     return global;
   }
 
   std::vector<char> payload = SerializeMisspelled(local_misspelled);
   unsigned long long payload_size = payload.size();
-  if (payload_size >
-      static_cast<unsigned long long>(std::numeric_limits<int>::max())) {
+  if (payload_size > static_cast<unsigned long long>(std::numeric_limits<int>::max())) {
     throw std::runtime_error("Gather payload exceeds MPI send limit");
   }
 
-  MPI_Send(&payload_size, 1, MPI_UNSIGNED_LONG_LONG, 0,
-           TagValue(MpiTag::kGatherSize), MPI_COMM_WORLD);
+  MPI_Send(&payload_size, 1, MPI_UNSIGNED_LONG_LONG, 0, TagValue(MpiTag::kGatherSize),
+           MPI_COMM_WORLD);
   if (payload_size > 0) {
     MPI_Send(payload.data(), static_cast<int>(payload_size), MPI_CHAR, 0,
              TagValue(MpiTag::kGatherData), MPI_COMM_WORLD);
@@ -462,8 +434,7 @@ Misspelled DeserializeMisspelled(const std::vector<char>& buffer) {
       if (offset + cand_len > buffer.size()) {
         throw std::runtime_error("Buffer underflow while decoding candidate");
       }
-      line.candidates.emplace_back(buffer.data() + offset,
-                                   buffer.data() + offset + cand_len);
+      line.candidates.emplace_back(buffer.data() + offset, buffer.data() + offset + cand_len);
       offset += cand_len;
     }
     result.push_back(std::move(line));
@@ -479,13 +450,11 @@ Misspelled DeserializeMisspelled(const std::vector<char>& buffer) {
 void DrainIncomingRequests(const DistributedDict& local_dict) {
   int flag = 0;
   MPI_Status status;
-  MPI_Iprobe(MPI_ANY_SOURCE, TagValue(MpiTag::kRequestHeader), MPI_COMM_WORLD,
-             &flag, &status);
+  MPI_Iprobe(MPI_ANY_SOURCE, TagValue(MpiTag::kRequestHeader), MPI_COMM_WORLD, &flag, &status);
   while (flag) {
     int src = status.MPI_SOURCE;
     int header[2] = {0, 0};
-    MPI_Recv(header, 2, MPI_INT, src, TagValue(MpiTag::kRequestHeader),
-             MPI_COMM_WORLD,
+    MPI_Recv(header, 2, MPI_INT, src, TagValue(MpiTag::kRequestHeader), MPI_COMM_WORLD,
              MPI_STATUS_IGNORE);
     int word_idx = header[0];
     int count = header[1];
@@ -507,14 +476,12 @@ void DrainIncomingRequests(const DistributedDict& local_dict) {
       buffer.resize(total_bytes);
       if (total_bytes > 0) {
         MPI_Recv(buffer.data(), static_cast<int>(total_bytes), MPI_CHAR, src,
-                 TagValue(MpiTag::kRequestPayload), MPI_COMM_WORLD,
-                 MPI_STATUS_IGNORE);
+                 TagValue(MpiTag::kRequestPayload), MPI_COMM_WORLD, MPI_STATUS_IGNORE);
       }
 
       size_t offset = 0;
       for (int i = 0; i < count; ++i) {
-        std::string candidate(buffer.data() + offset,
-                              static_cast<size_t>(lengths[i]));
+        std::string candidate(buffer.data() + offset, static_cast<size_t>(lengths[i]));
         if (local_dict.Contains(candidate)) {
           hit_indices.push_back(i);
         }
@@ -523,23 +490,19 @@ void DrainIncomingRequests(const DistributedDict& local_dict) {
     }
 
     int response_header[2] = {word_idx, static_cast<int>(hit_indices.size())};
-    MPI_Send(response_header, 2, MPI_INT, src, TagValue(MpiTag::kResponseHeader),
-             MPI_COMM_WORLD);
+    MPI_Send(response_header, 2, MPI_INT, src, TagValue(MpiTag::kResponseHeader), MPI_COMM_WORLD);
     if (!hit_indices.empty()) {
-      MPI_Send(hit_indices.data(), static_cast<int>(hit_indices.size()),
-               MPI_INT, src, TagValue(MpiTag::kResponseIndices), MPI_COMM_WORLD);
+      MPI_Send(hit_indices.data(), static_cast<int>(hit_indices.size()), MPI_INT, src,
+               TagValue(MpiTag::kResponseIndices), MPI_COMM_WORLD);
     }
 
-    MPI_Iprobe(MPI_ANY_SOURCE, TagValue(MpiTag::kRequestHeader), MPI_COMM_WORLD,
-               &flag, &status);
+    MPI_Iprobe(MPI_ANY_SOURCE, TagValue(MpiTag::kRequestHeader), MPI_COMM_WORLD, &flag, &status);
   }
 }
 
-void SendCandidateBatch(int target_rank, int word_idx,
-                        const std::vector<std::string>& candidates) {
+void SendCandidateBatch(int target_rank, int word_idx, const std::vector<std::string>& candidates) {
   int header[2] = {word_idx, static_cast<int>(candidates.size())};
-  MPI_Send(header, 2, MPI_INT, target_rank, TagValue(MpiTag::kRequestHeader),
-           MPI_COMM_WORLD);
+  MPI_Send(header, 2, MPI_INT, target_rank, TagValue(MpiTag::kRequestHeader), MPI_COMM_WORLD);
   if (candidates.empty()) {
     return;
   }
@@ -551,8 +514,8 @@ void SendCandidateBatch(int target_rank, int word_idx,
     total_bytes += candidates[i].size();
   }
 
-  MPI_Send(lengths.data(), static_cast<int>(lengths.size()), MPI_INT,
-           target_rank, TagValue(MpiTag::kRequestLengths), MPI_COMM_WORLD);
+  MPI_Send(lengths.data(), static_cast<int>(lengths.size()), MPI_INT, target_rank,
+           TagValue(MpiTag::kRequestLengths), MPI_COMM_WORLD);
 
   std::string buffer;
   buffer.reserve(total_bytes);
@@ -560,8 +523,8 @@ void SendCandidateBatch(int target_rank, int word_idx,
     buffer.append(cand);
   }
   if (!buffer.empty()) {
-    MPI_Send(buffer.data(), static_cast<int>(buffer.size()), MPI_CHAR,
-             target_rank, TagValue(MpiTag::kRequestPayload), MPI_COMM_WORLD);
+    MPI_Send(buffer.data(), static_cast<int>(buffer.size()), MPI_CHAR, target_rank,
+             TagValue(MpiTag::kRequestPayload), MPI_COMM_WORLD);
   }
 }
 
@@ -571,20 +534,17 @@ std::vector<int> WaitForResponse(int target_rank, int expected_word_idx,
   while (true) {
     DrainIncomingRequests(local_dict);
     int flag = 0;
-    MPI_Iprobe(target_rank, TagValue(MpiTag::kResponseHeader), MPI_COMM_WORLD,
-               &flag, &status);
+    MPI_Iprobe(target_rank, TagValue(MpiTag::kResponseHeader), MPI_COMM_WORLD, &flag, &status);
     if (flag) {
       int response_header[2] = {0, 0};
-      MPI_Recv(response_header, 2, MPI_INT, target_rank,
-               TagValue(MpiTag::kResponseHeader), MPI_COMM_WORLD,
-               MPI_STATUS_IGNORE);
+      MPI_Recv(response_header, 2, MPI_INT, target_rank, TagValue(MpiTag::kResponseHeader),
+               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
       (void)expected_word_idx;
       int hit_count = response_header[1];
       std::vector<int> indices(hit_count);
       if (hit_count > 0) {
         MPI_Recv(indices.data(), hit_count, MPI_INT, target_rank,
-                 TagValue(MpiTag::kResponseIndices), MPI_COMM_WORLD,
-                 MPI_STATUS_IGNORE);
+                 TagValue(MpiTag::kResponseIndices), MPI_COMM_WORLD, MPI_STATUS_IGNORE);
       }
       return indices;
     }
@@ -593,14 +553,13 @@ std::vector<int> WaitForResponse(int target_rank, int expected_word_idx,
 
 void SendTerminationSignals(int rank, int world_size) {
   for (int peer = 0; peer < world_size; ++peer) {
-    if (peer == rank) continue;
-    MPI_Send(nullptr, 0, MPI_CHAR, peer, TagValue(MpiTag::kTerminate),
-             MPI_COMM_WORLD);
+    if (peer == rank)
+      continue;
+    MPI_Send(nullptr, 0, MPI_CHAR, peer, TagValue(MpiTag::kTerminate), MPI_COMM_WORLD);
   }
 }
 
-void WaitForTerminations(const DistributedDict& local_dict, int rank,
-                         int world_size) {
+void WaitForTerminations(const DistributedDict& local_dict, int rank, int world_size) {
   std::vector<bool> done(world_size, false);
   done[rank] = true;
   int done_count = 0;
@@ -609,12 +568,10 @@ void WaitForTerminations(const DistributedDict& local_dict, int rank,
     DrainIncomingRequests(local_dict);
     int flag = 0;
     MPI_Status status;
-    MPI_Iprobe(MPI_ANY_SOURCE, TagValue(MpiTag::kTerminate), MPI_COMM_WORLD,
-               &flag, &status);
+    MPI_Iprobe(MPI_ANY_SOURCE, TagValue(MpiTag::kTerminate), MPI_COMM_WORLD, &flag, &status);
     if (flag) {
-      MPI_Recv(nullptr, 0, MPI_CHAR, status.MPI_SOURCE,
-               TagValue(MpiTag::kTerminate), MPI_COMM_WORLD,
-               MPI_STATUS_IGNORE);
+      MPI_Recv(nullptr, 0, MPI_CHAR, status.MPI_SOURCE, TagValue(MpiTag::kTerminate),
+               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
       if (!done[status.MPI_SOURCE]) {
         done[status.MPI_SOURCE] = true;
         ++done_count;
@@ -624,16 +581,15 @@ void WaitForTerminations(const DistributedDict& local_dict, int rank,
 }
 }  // namespace
 
-Misspelled RunMpi(const char* dict_text, size_t dict_size,
-                  const char* word_list_text, size_t word_list_size,
-                  bool use_bloom) {
+Misspelled RunMpi(const char* dict_text, size_t dict_size, const char* word_list_text,
+                  size_t word_list_size, bool use_bloom) {
   int rank = 0, world_size = 1;
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   MPI_Comm_size(MPI_COMM_WORLD, &world_size);
 
   if (rank == 0) {
-    std::cout << "[MPI] Starting distributed spell check with " << world_size
-              << " ranks" << std::endl;
+    std::cout << "[MPI] Starting distributed spell check with " << world_size << " ranks"
+              << std::endl;
   }
 
   double overall_start = MPI_Wtime();
@@ -644,33 +600,29 @@ Misspelled RunMpi(const char* dict_text, size_t dict_size,
   DistributedDict local_dict =
       BuildDictionaryStage(dict_text, dict_size, rank, world_size, timings);
 
-    BloomConfig bloom_config =
-        SetupBloomStage(use_bloom, local_dict, rank, world_size, timings);
-    bloom_enabled = bloom_config.enabled;
+  BloomConfig bloom_config = SetupBloomStage(use_bloom, local_dict, rank, world_size, timings);
+  bloom_enabled = bloom_config.enabled;
 
   std::vector<std::string> word_list =
       BuildWordListStage(word_list_text, word_list_size, rank, timings);
 
-  MembershipResult membership = ComputeMembershipStage(
-      local_dict, word_list, rank, world_size, timings);
+  MembershipResult membership =
+      ComputeMembershipStage(local_dict, word_list, rank, world_size, timings);
   const std::vector<int>& owned_word_indices = membership.owned_indices;
 
   CandidateStageOutput candidate_output = ProcessCandidatesStage(
-      word_list, owned_word_indices, local_dict, bloom_config, rank,
-      world_size, timings);
+      word_list, owned_word_indices, local_dict, bloom_config, rank, world_size, timings);
   Misspelled local_misspelled = std::move(candidate_output.local);
   bloom_stats = candidate_output.stats;
 
-  Misspelled global_misspelled =
-      GatherResultsStage(local_misspelled, rank, world_size, timings);
+  Misspelled global_misspelled = GatherResultsStage(local_misspelled, rank, world_size, timings);
 
   timings.push_back({"total_mpi", MPI_Wtime() - overall_start});
 
   ReportStageTimings(timings, rank, world_size);
   if (bloom_enabled) {
-    ReportBloomMetrics(bloom_stats.checked, bloom_stats.rejected,
-                       bloom_stats.forwarded, bloom_stats.confirmed, rank,
-                       world_size);
+    ReportBloomMetrics(bloom_stats.checked, bloom_stats.rejected, bloom_stats.forwarded,
+                       bloom_stats.confirmed, rank, world_size);
   }
 
   return global_misspelled;

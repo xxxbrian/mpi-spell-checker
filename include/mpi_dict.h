@@ -18,6 +18,7 @@ class DistributedDict {
 
   // Get the number of words in this shard
   size_t Size() const { return words_.size(); }
+
   const std::unordered_set<std::string>& Words() const { return words_; }
 
  private:
@@ -25,7 +26,6 @@ class DistributedDict {
 };
 
 // Build a dictionary shard from text chunk
-DistributedDict BuildDistributedDict(const char* text, size_t text_size,
-                                     int rank, int world_size);
+DistributedDict BuildDistributedDict(const char* text, size_t text_size, int rank, int world_size);
 
 #endif  // MPI_DICT_H

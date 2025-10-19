@@ -12,12 +12,12 @@
 class BloomFilter {
  public:
   BloomFilter() = default;
-  BloomFilter(size_t bit_count, size_t hash_count) {
-    Init(bit_count, hash_count);
-  }
+
+  BloomFilter(size_t bit_count, size_t hash_count) { Init(bit_count, hash_count); }
 
   void Add(const std::string& key) {
-    if (bit_count_ == 0 || hash_count_ == 0) return;
+    if (bit_count_ == 0 || hash_count_ == 0)
+      return;
     std::hash<std::string_view> hasher;
     std::string_view key_view(key);
     size_t h1 = hasher(key_view);
@@ -34,7 +34,8 @@ class BloomFilter {
   }
 
   bool PossiblyContains(const std::string& key) const {
-    if (bit_count_ == 0 || hash_count_ == 0) return false;
+    if (bit_count_ == 0 || hash_count_ == 0)
+      return false;
     std::hash<std::string_view> hasher;
     std::string_view key_view(key);
     size_t h1 = hasher(key_view);
@@ -55,13 +56,17 @@ class BloomFilter {
   }
 
   const std::vector<uint8_t>& Bits() const { return bits_; }
+
   size_t BitCount() const { return bit_count_; }
+
   size_t HashCount() const { return hash_count_; }
+
   size_t ByteSize() const { return bits_.size(); }
 
-  static bool MaybeContainsRaw(const uint8_t* data, size_t bit_count,
-                               size_t hash_count, const std::string& key) {
-    if (!data || bit_count == 0 || hash_count == 0) return false;
+  static bool MaybeContainsRaw(const uint8_t* data, size_t bit_count, size_t hash_count,
+                               const std::string& key) {
+    if (!data || bit_count == 0 || hash_count == 0)
+      return false;
     std::hash<std::string_view> hasher;
     std::string_view key_view(key);
     size_t h1 = hasher(key_view);

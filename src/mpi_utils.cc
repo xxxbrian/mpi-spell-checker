@@ -6,8 +6,7 @@
 #include <functional>
 #include <string_view>
 
-char* LoadDictionaryShard(const char* filename, int rank, int world_size,
-                          size_t* shard_size) {
+char* LoadDictionaryShard(const char* filename, int rank, int world_size, size_t* shard_size) {
   // Get file size
   MPI_File fh;
   MPI_File_open(MPI_COMM_WORLD, filename, MPI_MODE_RDONLY, MPI_INFO_NULL, &fh);
@@ -32,7 +31,8 @@ char* LoadDictionaryShard(const char* filename, int rank, int world_size,
       while (start_offset < file_size) {
         MPI_File_read(fh, &ch, 1, MPI_CHAR, MPI_STATUS_IGNORE);
         start_offset++;
-        if (ch == '\n') break;
+        if (ch == '\n')
+          break;
       }
     }
 
@@ -43,7 +43,8 @@ char* LoadDictionaryShard(const char* filename, int rank, int world_size,
       while (end_offset < file_size) {
         MPI_File_read(fh, &ch, 1, MPI_CHAR, MPI_STATUS_IGNORE);
         end_offset++;
-        if (ch == '\n') break;
+        if (ch == '\n')
+          break;
       }
     } else {
       end_offset = file_size;

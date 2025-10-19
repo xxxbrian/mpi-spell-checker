@@ -7,5 +7,4 @@
 #define FILE_EMPTY 2
 #define FILE_INCORRECT_BOM 3
 
-
-#endif // CODES_H
+#endif  // CODES_H

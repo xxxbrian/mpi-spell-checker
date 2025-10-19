@@ -8,7 +8,6 @@
 // Includes: replacement (one char changed), deletion (one char removed),
 //           insertion (one char added)
 // Does NOT include: transposition (swap adjacent chars)
-std::vector<std::string> GenerateEditDistance1Candidates(
-    const std::string& word);
+std::vector<std::string> GenerateEditDistance1Candidates(const std::string& word);
 
 #endif  // MPI_CANDIDATES_H

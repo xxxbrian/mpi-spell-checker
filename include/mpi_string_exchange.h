@@ -25,18 +25,16 @@ struct StringExchangePlan {
   std::vector<int> recv_indices;
 };
 
-inline void ComputeDisplacements(const std::vector<int>& counts,
-                                 std::vector<int>* displs) {
+inline void ComputeDisplacements(const std::vector<int>& counts, std::vector<int>* displs) {
   displs->assign(counts.size(), 0);
   for (size_t i = 1; i < counts.size(); ++i) {
     (*displs)[i] = (*displs)[i - 1] + counts[i - 1];
   }
 }
 
-inline void PrepareStringExchange(
-    const std::vector<std::vector<std::string>>& outbound,
-    const std::vector<std::vector<int>>* index_lists, int rank, int world_size,
-    StringExchangePlan* plan) {
+inline void PrepareStringExchange(const std::vector<std::vector<std::string>>& outbound,
+                                  const std::vector<std::vector<int>>* index_lists, int rank,
+                                  int world_size, StringExchangePlan* plan) {
   plan->send_counts.assign(world_size, 0);
   plan->recv_counts.assign(world_size, 0);
   plan->send_displs.assign(world_size, 0);
@@ -47,12 +45,13 @@ inline void PrepareStringExchange(
   plan->recv_bytes_displs.assign(world_size, 0);
 
   for (int target = 0; target < world_size; ++target) {
-    if (target == rank) continue;
+    if (target == rank)
+      continue;
     plan->send_counts[target] = static_cast<int>(outbound[target].size());
   }
 
-  MPI_Alltoall(plan->send_counts.data(), 1, MPI_INT, plan->recv_counts.data(),
-               1, MPI_INT, MPI_COMM_WORLD);
+  MPI_Alltoall(plan->send_counts.data(), 1, MPI_INT, plan->recv_counts.data(), 1, MPI_INT,
+               MPI_COMM_WORLD);
 
   int total_send_words = 0;
   int total_recv_words = 0;
@@ -72,8 +71,7 @@ inline void PrepareStringExchange(
   for (int target = 0; target < world_size; ++target) {
     int offset = plan->send_displs[target];
     for (int j = 0; j < plan->send_counts[target]; ++j) {
-      plan->send_lengths[offset + j] =
-          static_cast<int>(outbound[target][j].size());
+      plan->send_lengths[offset + j] = static_cast<int>(outbound[target][j].size());
       if (index_lists) {
         plan->send_indices[offset + j] = (*index_lists)[target][j];
       }
@@ -82,18 +80,15 @@ inline void PrepareStringExchange(
 
   int* send_lengths_ptr = total_send_words ? plan->send_lengths.data() : nullptr;
   int* recv_lengths_ptr = total_recv_words ? plan->recv_lengths.data() : nullptr;
-  MPI_Alltoallv(send_lengths_ptr, plan->send_counts.data(),
-                plan->send_displs.data(), MPI_INT, recv_lengths_ptr,
-                plan->recv_counts.data(), plan->recv_displs.data(), MPI_INT,
+  MPI_Alltoallv(send_lengths_ptr, plan->send_counts.data(), plan->send_displs.data(), MPI_INT,
+                recv_lengths_ptr, plan->recv_counts.data(), plan->recv_displs.data(), MPI_INT,
                 MPI_COMM_WORLD);
 
   if (index_lists) {
     int* send_indices_ptr = total_send_words ? plan->send_indices.data() : nullptr;
-    int* recv_indices_ptr =
-        total_recv_words ? plan->recv_indices.data() : nullptr;
-    MPI_Alltoallv(send_indices_ptr, plan->send_counts.data(),
-                  plan->send_displs.data(), MPI_INT, recv_indices_ptr,
-                  plan->recv_counts.data(), plan->recv_displs.data(), MPI_INT,
+    int* recv_indices_ptr = total_recv_words ? plan->recv_indices.data() : nullptr;
+    MPI_Alltoallv(send_indices_ptr, plan->send_counts.data(), plan->send_displs.data(), MPI_INT,
+                  recv_indices_ptr, plan->recv_counts.data(), plan->recv_displs.data(), MPI_INT,
                   MPI_COMM_WORLD);
   }
 
@@ -128,28 +123,23 @@ inline void PrepareStringExchange(
     int byte_offset = plan->send_bytes_displs[target];
     for (int j = 0; j < plan->send_counts[target]; ++j) {
       const std::string& word = outbound[target][j];
-      std::memcpy(plan->send_bytes.data() + byte_offset, word.data(),
-                  word.size());
+      std::memcpy(plan->send_bytes.data() + byte_offset, word.data(), word.size());
       byte_offset += static_cast<int>(word.size());
     }
   }
 }
 
 inline void ExecuteStringExchange(StringExchangePlan* plan) {
-  char* send_bytes_ptr =
-      plan->send_bytes.empty() ? nullptr : plan->send_bytes.data();
-  char* recv_bytes_ptr =
-      plan->recv_bytes.empty() ? nullptr : plan->recv_bytes.data();
+  char* send_bytes_ptr = plan->send_bytes.empty() ? nullptr : plan->send_bytes.data();
+  char* recv_bytes_ptr = plan->recv_bytes.empty() ? nullptr : plan->recv_bytes.data();
 
-  MPI_Alltoallv(send_bytes_ptr, plan->send_bytes_counts.data(),
-                plan->send_bytes_displs.data(), MPI_CHAR, recv_bytes_ptr,
-                plan->recv_bytes_counts.data(), plan->recv_bytes_displs.data(),
-                MPI_CHAR, MPI_COMM_WORLD);
+  MPI_Alltoallv(send_bytes_ptr, plan->send_bytes_counts.data(), plan->send_bytes_displs.data(),
+                MPI_CHAR, recv_bytes_ptr, plan->recv_bytes_counts.data(),
+                plan->recv_bytes_displs.data(), MPI_CHAR, MPI_COMM_WORLD);
 }
 
-inline void UnpackStringExchange(
-    const StringExchangePlan& plan,
-    std::vector<std::vector<std::string>>* inbound) {
+inline void UnpackStringExchange(const StringExchangePlan& plan,
+                                 std::vector<std::vector<std::string>>* inbound) {
   inbound->assign(plan.recv_counts.size(), {});
   for (size_t source = 0; source < plan.recv_counts.size(); ++source) {
     int count = plan.recv_counts[source];

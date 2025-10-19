@@ -9,8 +9,7 @@
 
 // Load dictionary shard for this rank using MPI-IO or simple partitioning
 // Returns the text chunk that this rank is responsible for
-char* LoadDictionaryShard(const char* filename, int rank, int world_size,
-                          size_t* shard_size);
+char* LoadDictionaryShard(const char* filename, int rank, int world_size, size_t* shard_size);
 
 // Build word list from text (all ranks can do this independently or use broadcast)
 std::vector<std::string> BuildMpiWordList(const char* text, size_t text_size);

@@ -1,11 +1,11 @@
 #include "mpi_candidates.h"
 
-std::vector<std::string> GenerateEditDistance1Candidates(
-    const std::string& word) {
+std::vector<std::string> GenerateEditDistance1Candidates(const std::string& word) {
   std::vector<std::string> candidates;
-  const std::string alphabet = "abcdefghijklmnopqrstuvwxyz"
-                                "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-                                "0123456789";
+  const std::string alphabet =
+      "abcdefghijklmnopqrstuvwxyz"
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+      "0123456789";
 
   // 1. Deletion: remove one character
   for (size_t i = 0; i < word.length(); ++i) {

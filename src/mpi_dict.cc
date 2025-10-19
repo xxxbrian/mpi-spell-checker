@@ -1,8 +1,8 @@
 #include "mpi_dict.h"
 #include <mpi.h>
 #include <cctype>
-#include <vector>
 #include <cstring>
+#include <vector>
 #include "mpi_string_exchange.h"
 #include "mpi_utils.h"
 
@@ -20,14 +20,13 @@ bool DistributedDict::Contains(const std::string& word) const {
 
   std::string normalized;
   if (NormalizeFirstLower(word, &normalized) && words_.count(normalized)) {
-      return true;
+    return true;
   }
 
   return false;
 }
 
-DistributedDict BuildDistributedDict(const char* text, size_t text_size,
-                                     int rank, int world_size) {
+DistributedDict BuildDistributedDict(const char* text, size_t text_size, int rank, int world_size) {
   DistributedDict dict;
 
   if (world_size <= 1) {

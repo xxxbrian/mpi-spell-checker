@@ -7,15 +7,13 @@
 #include <unordered_set>
 #include "bk_tree.h"
 
-
 #define DELETED_OR_REPLACED_OR_ADDED 1
+
 class Dictionary {
  public:
   size_t size;
 
-  Dictionary(const char* text, size_t text_size) : size(0) {
-    Build(text, text_size);
-  }
+  Dictionary(const char* text, size_t text_size) : size(0) { Build(text, text_size); }
 
   bool Contains(const std::string& word);
   void BuildBKTree(size_t root_len);

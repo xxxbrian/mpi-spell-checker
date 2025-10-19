@@ -42,8 +42,7 @@ void Dictionary::BuildBKTree(size_t root_len) {
   std::string root_word;
 
   // Check if we have words of the requested length
-  if (len_to_words.find(root_len) != len_to_words.end() &&
-      !len_to_words[root_len].empty()) {
+  if (len_to_words.find(root_len) != len_to_words.end() && !len_to_words[root_len].empty()) {
     root_word = len_to_words[root_len][0];
   } else {
     // If no words of root_len exist, use the first available word from any length
@@ -72,8 +71,7 @@ bool Dictionary::Contains(const std::string& word) {
   return false;
 }
 
-void Dictionary::Candidates(const std::string& word,
-                            std::vector<std::string>* result) {
+void Dictionary::Candidates(const std::string& word, std::vector<std::string>* result) {
   bk_tree.SearchNode(word, 2, result);
 }
 
