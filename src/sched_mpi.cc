@@ -499,12 +499,6 @@ Misspelled RunMpi(const char* dict_text, size_t dict_size,
     line.word = word_list[word_idx];
     line.candidates.assign(verified.begin(), verified.end());
 
-    // Sort candidates by strcmp
-    std::sort(line.candidates.begin(), line.candidates.end(),
-              [](const std::string& a, const std::string& b) {
-                return std::strcmp(a.c_str(), b.c_str()) < 0;
-              });
-
     local_misspelled.push_back(line);
   }
 
@@ -542,15 +536,6 @@ Misspelled RunMpi(const char* dict_text, size_t dict_size,
                                std::make_move_iterator(remote.begin()),
                                std::make_move_iterator(remote.end()));
     }
-
-    // Sort final results
-    std::sort(global_misspelled.begin(), global_misspelled.end(),
-              [](const Line& a, const Line& b) {
-                if (a.candidates.size() == b.candidates.size()) {
-                  return std::strcmp(a.word.c_str(), b.word.c_str()) < 0;
-                }
-                return a.candidates.size() < b.candidates.size();
-              });
 
     std::cout << "[MPI] Total misspelled words: " << global_misspelled.size()
               << std::endl;
