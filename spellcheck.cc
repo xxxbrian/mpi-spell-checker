@@ -31,22 +31,21 @@ void ReportTimingMetric(const char* label, double local_time, int rank, int worl
 }  // namespace
 
 int main(int argc, char** argv) {
-  bool use_bloom = false;
-  bool force_mpi = false;
+  bool use_bloom = true;
+  bool force_mpi = true;
 
   if (argc < 3) {
-    cout << "Usage: " << argv[0] << " <dictionary> <word_list> [--use-bloom] [--force-mpi]" << endl;
+    cout << "Usage: " << argv[0] << " <dictionary> <word_list> [--no-bloom] [--no-mpi]" << endl;
     return 1;
   }
 
   for (int i = 3; i < argc; ++i) {
-    if (strcmp(argv[i], "--use-bloom") == 0) {
-      use_bloom = true;
-    } else if (strcmp(argv[i], "--force-mpi") == 0) {
-      force_mpi = true;
+    if (strcmp(argv[i], "--no-bloom") == 0) {
+      use_bloom = false;
+    } else if (strcmp(argv[i], "--no-mpi") == 0) {
+      force_mpi = false;
     } else {
-      cout << "Usage: " << argv[0] << " <dictionary> <word_list> [--use-bloom] [--force-mpi]"
-           << endl;
+      cout << "Usage: " << argv[0] << " <dictionary> <word_list> [--no-bloom] [--no-mpi]" << endl;
       return 1;
     }
   }
@@ -77,7 +76,7 @@ int main(int argc, char** argv) {
   char* dict_text = nullptr;
   char* word_list_text = nullptr;
 
-  const bool use_mpi_backend = (world_size > 1) || force_mpi;
+  const bool use_mpi_backend = force_mpi && (world_size > 1);
 
   double dict_load_start = MPI_Wtime();
   if (use_mpi_backend) {
