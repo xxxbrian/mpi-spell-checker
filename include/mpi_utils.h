@@ -6,7 +6,6 @@
 #include <string>
 #include <string_view>
 #include <vector>
-#include "mpi_dict.h"
 
 // Load dictionary shard for this rank using MPI-IO or simple partitioning
 // Returns the text chunk that this rank is responsible for
