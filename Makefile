@@ -1,95 +1,52 @@
-CC = mpiCC
+# Convert from Justfile by genAI.
+SHELL := /bin/bash
 
-# check if mpiCC is available
-MPI_CC_PATH := $(shell command -v mpiCC 2>/dev/null)
-ifndef MPI_CC_PATH
-	$(error mpiCC not found. Please install MPI to run this command.)
-endif
+# --- Config ---------------------------------------------------------
+BUILD_DIR ?= build
+BINARY    ?= $(BUILD_DIR)/spellcheck
+TEST_BIN  ?= $(BUILD_DIR)/test
 
-# Check if the machine is macOS
-UNAME_S := $(shell uname -s)
-ifeq ($(UNAME_S),Darwin)
-    IS_MACOS := 1
-    # Set environment variables for Homebrew-installed LLVM
-    export PATH := /opt/homebrew/opt/llvm/bin:$(PATH)
-    export LDFLAGS := -L/opt/homebrew/opt/llvm/lib -L/opt/homebrew/lib -lomp
-    export CCFLAGS := -I/opt/homebrew/opt/llvm/include -I/opt/homebrew/include -Xpreprocessor -fopenmp
-else
-    IS_MACOS := 0
-    LDFLAGS = -lmpi -fopenmp
-endif
+CMAKE_ARGS ?=
 
+ARGS ?=
 
-# Set DEBUG to 1 for debug build, 0 for release build
-DEBUG ?= 0
-CCFLAGS += -std=c++17 -Iinclude 
-GTEST_FLAGS = -Igtest/include -Igtest
-GMOCK_FLAGS = -Igmock/include -Igmock
+DICT ?= files/dictionary.spec.txt
+WORDS ?= files/words.spec.txt
 
-ifeq ($(DEBUG), 1)
-    CCFLAGS += -g
-else
-    CCFLAGS += -O3
-endif
+SRC_DIRS := include src
 
-# Directories
-SRC_DIR = src
-TEST_DIR = test
-BUILD_DIR = build
-BUILD_GTEST_DIR = $(BUILD_DIR)/gtest
-BUILD_GMOCK_DIR = $(BUILD_DIR)/gmock
+# --- Phony targets --------------------------------------------------
+.PHONY: all build clean run run-local test fmt fmt-check
 
-SRC_FILES := $(shell find $(SRC_DIR) -name '*.cc')
-OBJ_FILES := $(patsubst $(SRC_DIR)/%.cc,$(BUILD_DIR)/%.o,$(SRC_FILES))
+all: build
 
-MAIN_SRC_FILE := spellcheck.cc
-TEST_SRC_FILE := $(TEST_DIR)/test_main.cc
-
-# GTest
-GTEST_SRCS = gtest/src/gtest-all.cc
-GTEST_MAIN_SRCS = gtest/src/gtest_main.cc
-GTEST_OBJS = $(BUILD_GTEST_DIR)/gtest-all.o
-GMOCK_SRCS = gmock/src/gmock-all.cc
-GMOCK_OBJS = $(BUILD_GMOCK_DIR)/gmock-all.o
-
-# Default target
-all: spellcheck test format
-
-# GTest object files
-$(GTEST_OBJS): $(GTEST_SRCS)
-	@mkdir -p $(BUILD_GTEST_DIR)
-	$(CC) $(CCFLAGS) $(GTEST_FLAGS) -c $< -o $(GTEST_OBJS)
-
-# GMock object files
-$(GMOCK_OBJS): $(GMOCK_SRCS) 
-	@mkdir -p $(BUILD_GMOCK_DIR)
-	$(CC) $(CCFLAGS) $(GTEST_FLAGS) $(GMOCK_FLAGS) -c $< -o $(GMOCK_OBJS)
-
-# Rule to compile each .cc file to its corresponding .o file
-$(BUILD_DIR)/%.o: $(SRC_DIR)/%.cc
-	@mkdir -p $(dir $@)
-	$(CC)  $(CCFLAGS) -c $< -o $@
-
-test: $(TEST_SRC_FILE) $(GTEST_OBJS) $(GMOCK_OBJS) $(OBJ_FILES)
-	@mkdir -p $(BUILD_DIR)
-	$(CXX) $(CCFLAGS) $(GTEST_FLAGS) $(GMOCK_FLAGS) $^ $(LDFLAGS) -o $(BUILD_DIR)/$@
-	build/test
-
-spellcheck: $(OBJ_FILES) $(MAIN_SRC_FILE)
-	@mkdir -p $(BUILD_DIR)
-	$(CC) $(LDFLAGS) -lstdc++ $(OBJ_FILES) $(MAIN_SRC_FILE) -o $(BUILD_DIR)/$@
-
-CLANG_FORMAT_PATH := $(shell command -v clang-format 2>/dev/null)
-format:
-ifdef CLANG_FORMAT_PATH
-	$(CLANG_FORMAT_PATH) -i $(SRC_FILES) $(MAIN_SRC_FILE) $(TEST_SRC_FILE)
-else
-# 	@echo "clang-format not found. Please install clang-format to run this command."
-endif
-
-VER ?=
-archive:
-	@git archive --format=tar.gz --prefix skeleton-p2/ -o comp90025-skeleton-p2-v$(VER).tar.gz HEAD
+build:
+	@echo "Building..."
+	@mkdir -p "$(BUILD_DIR)"
+	@cd "$(BUILD_DIR)" && cmake $(CMAKE_ARGS) .. && cmake --build .
 
 clean:
-	rm -rf $(BUILD_DIR)/*
+	@echo "Cleaning..."
+	@rm -rf "$(BUILD_DIR)"
+	@rm -rf .cache
+
+run: build
+	@echo "Running..."
+	@$(BINARY) $(ARGS)
+
+run-local: build
+	@$(MAKE) run ARGS="$(DICT) $(WORDS)"
+
+test: build
+	@echo "Testing..."
+	@$(TEST_BIN)
+
+fmt:
+	@echo "Formatting..."
+	@find $(SRC_DIRS) -type f \( -name "*.h" -o -name "*.cc" -o -name "*.cpp" -o -name "*.c" \) -exec clang-format -i {} +
+	@if [ -f spellcheck.cc ]; then clang-format -i spellcheck.cc; fi
+
+fmt-check:
+	@echo "Formatting (dry run)..."
+	@find $(SRC_DIRS) -type f \( -name "*.h" -o -name "*.cc" -o -name "*.cpp" -o -name "*.c" \) -exec clang-format --dry-run --Werror {} +
+	@if [ -f spellcheck.cc ]; then clang-format --dry-run --Werror spellcheck.cc; fi
