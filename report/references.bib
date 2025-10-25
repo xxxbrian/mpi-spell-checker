@@ -1,0 +1,82 @@
+@article{article-bloom-filter,
+  author = {Bloom, Burton H.},
+  title = {Space/time trade-offs in hash coding with allowable errors},
+  year = {1970},
+  issue_date = {July 1970},
+  publisher = {Association for Computing Machinery},
+  address = {New York, NY, USA},
+  volume = {13},
+  number = {7},
+  issn = {0001-0782},
+  url = {https://doi.org/10.1145/362686.362692},
+  doi = {10.1145/362686.362692},
+  abstract = {In this paper trade-offs among certain computational factors in hash coding are analyzed. The paradigm problem considered is that of testing a series of messages one-by-one for membership in a given set of messages. Two new hash-coding methods are examined and compared with a particular conventional hash-coding method. The computational factors considered are the size of the hash area (space), the time required to identify a message as a nonmember of the given set (reject time), and an allowable error frequency.The new methods are intended to reduce the amount of space required to contain the hash-coded information from that associated with conventional methods. The reduction in space is accomplished by exploiting the possibility that a small fraction of errors of commission may be tolerable in some applications, in particular, applications in which a large amount of data is involved and a core resident hash area is consequently not feasible using conventional methods.In such applications, it is envisaged that overall performance could be improved by using a smaller core resident hash area in conjunction with the new methods and, when necessary, by using some secondary and perhaps time-consuming test to “catch” the small fraction of errors associated with the new methods. An example is discussed which illustrates possible areas of application for the new methods.Analysis of the paradigm problem demonstrates that allowing a small number of test messages to be falsely identified as members of the given set will permit a much smaller hash area to be used without increasing reject time.},
+  journal = {Commun. ACM},
+  month = jul,
+  pages = {422–426},
+  numpages = {5},
+  keywords = {storage layout, storage efficiency, searching, scatter storage, retrieval trade-offs, retrieval efficiency, hash coding, hash addressing}
+}
+
+@inproceedings{inproceedings-bk-tree,
+  author={Baeza-Yates, R. and Navarro, G.},
+  booktitle={Proceedings. String Processing and Information Retrieval: A South American Symposium (Cat. No.98EX207)}, 
+  title={Fast approximate string matching in a dictionary}, 
+  year={1998},
+  volume={},
+  number={},
+  pages={14-22},
+  abstract={A successful technique to search large textual databases allowing errors relies on an online search in the vocabulary of the text. To reduce the time of that online search, we index the vocabulary as a metric space. We show that with reasonable space overhead we can improve by a factor of two over the fastest online algorithms, when the tolerated error level is low (which is reasonable in text searching).},
+  keywords={Dictionaries;Vocabulary;Databases;Extraterrestrial measurements;Signal processing algorithms;Computer science;Computer errors;Pattern matching;Error correction;Natural languages},
+  doi={10.1109/SPIRE.1998.712978},
+  ISSN={},
+  month={Sep.},}
+
+@techreport{techreport-fnv,
+  author    = {Glenn Fowler and Landon Curt Noll and Kiem-Phong Vo and Donald Eastlake and Tony Hansen},
+  title     = {The FNV Non-Cryptographic Hash Algorithm},
+  institution = {Internet Engineering Task Force (IETF)},
+  type      = {Internet-Draft},
+  number    = {draft-eastlake-fnv-21},
+  year      = {2024},
+  month     = {January},
+  note      = {Defines the FNV-1a hash algorithm and its applications:contentReference[oaicite:2]{index=2}},
+  url       = {https://www.ietf.org/archive/id/draft-eastlake-fnv-21.html}
+}
+
+@online{online-bk-tree-intro,
+  author    = {{Activeloop}},
+  title     = {BK-Tree (Burkhard–Keller Tree) Glossary Entry},
+  year      = {2023},
+  url       = {https://www.activeloop.ai/resources/glossary/bk-tree-burkhard-keller-tree/},
+  urldate   = {2025-10-25},
+  note      = {Introduces BK-tree and explains its use in approximate string matching and spell checking:contentReference[oaicite:3]{index=3}}
+}
+
+@online{online-amdahl-law,
+  author    = {{Wikipedia contributors}},
+  title     = {Amdahl's law},
+  year      = {2025},
+  howpublished = {\url{https://en.wikipedia.org/wiki/Amdahl%27s_law}},
+  urldate   = {2025-10-25},
+  note      = {Provides the formula and interpretation of Amdahl's law for parallel speedup:contentReference[oaicite:4]{index=4}}
+}
+
+@online{online-bk-tree-impl,
+  author    = {{Nitish Kumar}},
+  title     = {BK-Tree | Introduction \& Implementation},
+  year      = {2023},
+  month     = {December},
+  url       = {https://www.geeksforgeeks.org/dsa/bk-tree-introduction-implementation/},
+  organization = {GeeksforGeeks},
+  note      = {Last accessed: 2025-10-26},
+  abstract  = {Explains the BK-tree (Burkhard--Keller tree) data structure for approximate string matching
+               and spell checking based on Levenshtein distance, with examples and C++/Python/Java code.}
+}
+
+@software{typst,
+  author = {Mädje, Laurenz and Haug, Martin and {The Typst Project Developers}},
+  license = {Apache-2.0},
+  title = {{Typst}},
+  url = {https://github.com/typst/typst}
+}
