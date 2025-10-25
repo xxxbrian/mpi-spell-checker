@@ -9,6 +9,12 @@
 #include "include/sched_mpi.h"
 #include "include/sched_single.h"
 
+// Divide into two backends, the skeleton's bktree and my MPI backend
+//
+// Usage: mpirun -n <num_procs> ./spell_checker_mpi <dictionary> <word_list> [--no-bloom] [--no-mpi]
+// --no-bloom : disable bloom filter optimization
+// --no-mpi   : disable MPI backend, use bktree from skeleton instead
+
 using namespace std;
 using namespace std::chrono;
 
