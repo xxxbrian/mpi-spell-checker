@@ -1,0 +1,53 @@
+i’ve got struct Candidate { std::string w; int d; }; and i’m trying std::unordered_set<Candidate>. compiler: no hash for Candidate / no ==. can you show me the minimal hash + == i need so this builds? (c++20)
+https://claude.ai/share/1ed1dc89-8a81-4bdb-8920-d91babc36146
+
+i’m doing unordered_map<string_view, int> for my dict shard (spellchecker). the string_view points into an MPI recv buffer. works for a bit then later boom / corrupted keys. is this just lifetime on string_view? what’s the sane pattern if i don’t wanna copy every word but i need stable keys across iterations?
+https://claude.ai/share/fa46e926-4d42-4997-bdad-a419916bb24a
+
+using std::vector<bool> as bloom filter bitset. i tried to MPI_Send(bits.data(), bits.size(), MPI_CHAR, ...) and it’s… weird / not working. is vector<bool> even real contiguous bytes i can send over MPI or do i need to switch to like vector<uint64_t> and bit math myself?
+https://claude.ai/share/158173d2-822e-413c-ad6f-da9a370755c6
+
+bloom filter: i need k hash funcs for a word. does stdlib give me anything or nah? can i just do double-hash style h1 + i*h2 mod m and call it a day or is that gonna be trash?
+https://claude.ai/share/c2e77745-5aad-49a0-8a8c-42a5a4b5e8a6
+
+locally i build w/ clang++ -std=c++20 fine. on cluster i have to use mpicxx (openmpi). cmake hits std::span, std::erase_if etc and says not found (looks like it’s defaulting to c++11). how do i force mpicxx to actually use c++20? just set(CMAKE_CXX_STANDARD 20) or do i need extra flags?
+https://claude.ai/share/9b31fc25-b2d8-4b53-b358-ccd844cc645c
+
+project has 2 mains now: spellcheck_main.cc and test_main.cc. cmake sometimes links both into one target and i get “multiple definition of main”. what’s the clean cmake way to share all src files but build two different executables w/ different mains?
+https://claude.ai/share/aa83406d-60d6-41f5-abc5-9ced605aa80f
+
+cmake find_package(MPI REQUIRED) works on my laptop. on HPC it says “MPI not found”, but on that machine we do module load openmpi/... and mpicxx exists. do i need to run cmake after module load so it caches the paths, or is there some manual hint i should give cmake?
+https://claude.ai/share/407048b6-345c-46d6-968a-6fbe8b45d8ed
+
+c++ strings over mpi: i tried
+MPI_Send(&word, word.size(), MPI_CHAR, dst, tag, MPI_COMM_WORLD)
+(where word is std::string). recv side obviously gets garbage. what’s the proper pattern? send len first, recv, resize, then send raw word.data()? got a minimal example?
+https://claude.ai/share/74d85a74-2bfc-4a9d-b07e-e7f82f494cd3
+
+i tried to broadcast std::vector<std::string> dict like:
+MPI_Bcast(&dict, sizeof(dict), MPI_BYTE, 0, MPI_COMM_WORLD)
+on other ranks dict.size() turns into some huge random number and then segfaults when i index. why doesn’t this work? how actually supposed to broadcast a list of strings?
+https://claude.ai/share/74394bf6-0246-46c8-b052-89e7a305ac23
+
+edit_distance returns int. later i do size_t bucket = edit_distance(a,b); and use bucket as index. getting weird behavior like wrap/underflow logic bugs. why does casting int -> size_t break my bucket logic? should i just keep it int everywhere?
+# this was asked using vscode inline chat with full code context provided
+
+timing: some code uses MPI_Wtime() (double seconds), other code uses chrono::steady_clock then cast to ms. when i gather timings from all ranks it doesn’t line up (units / ref point diff). should i just standardize on MPI_Wtime() for everything and then convert to ms at the very end?
+https://claude.ai/share/aab8cab6-8317-4d24-b63c-603c19bea61b
+
+how to install clang-format on hpc login node (redhat i think) with no root and sudo privileges? homebrew?
+https://claude.ai/share/5beea610-1cb4-4396-98f4-cc6d44493903
+
+i replaced a slurm sbatch script w/ a python harness that loops srun ... and uses subprocess.run(..., capture_output=True) to grab runtime numbers from stdout. sometimes my c++ timing line doesn’t show up (buffered). is the fix just std::cout << stuff << std::endl; everywhere or do i need std::ios::sync_with_stdio(false) / fflush(stdout) / something else to force flush per run?
+https://claude.ai/share/bbae7726-f9da-424a-97b4-8d1b03ff08d9
+
+i put helper funcs in a header like
+int edit_distance(const std::string& a, const std::string& b) { ... }
+included in multiple .cc files. linker now yells “multiple definition of edit_distance”. do i just slap inline on it in the header? or is it better style to move impl into a .cc and leave only the decl in the header?
+https://claude.ai/share/72c6d1f0-663d-4c9a-a91f-0b86e1e3dbd6
+
+gathering results back to rank 0 with MPI. i have
+struct Result { int word_id; int dist; };
+std::vector<Result> local;
+then i tried MPI_Gather(local.data(), local.size()*2, MPI_INT, ...) assuming it’s literally 2 ints. root side data is misaligned / junk. is this struct padding? should i pack the struct or just gather two separate int arrays instead?
+https://claude.ai/share/886beb35-b7b3-4907-8b42-4f55a7dc2ae6
